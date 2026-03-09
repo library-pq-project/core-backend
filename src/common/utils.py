@@ -1,11 +1,11 @@
 import hashlib
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from slugify import slugify
 
 
 def now_utc() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def generate_slug(value: str) -> str:
