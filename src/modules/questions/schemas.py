@@ -27,3 +27,41 @@ class QuestionRead(BaseModel):
     options: list[QuestionOptionRead] = []
 
     model_config = {"from_attributes": True}
+
+
+class QuestionOptionWrite(BaseModel):
+    option_text: str
+    is_correct: bool = False
+    position: int
+
+
+class QuestionCreate(BaseModel):
+    course_id: int
+    topic_id: int | None = None
+    lecture_note_id: int | None = None
+    year: int | None = None
+    question_text: str
+    question_type: str
+    source_type: str
+    difficulty_level: str | None = None
+    mark_allocation: float = 1.0
+    solution_text: str | None = None
+    explanation: str | None = None
+    is_active: bool = True
+    options: list[QuestionOptionWrite] = []
+
+
+class QuestionUpdate(BaseModel):
+    course_id: int | None = None
+    topic_id: int | None = None
+    lecture_note_id: int | None = None
+    year: int | None = None
+    question_text: str | None = None
+    question_type: str | None = None
+    source_type: str | None = None
+    difficulty_level: str | None = None
+    mark_allocation: float | None = None
+    solution_text: str | None = None
+    explanation: str | None = None
+    is_active: bool | None = None
+    options: list[QuestionOptionWrite] | None = None

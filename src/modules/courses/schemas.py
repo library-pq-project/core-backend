@@ -11,3 +11,21 @@ class CourseRead(BaseModel):
     semester: str | None
 
     model_config = {"from_attributes": True}
+
+
+class CourseCreate(BaseModel):
+    code: str
+    slug: str | None = None
+    title: str
+    description: str | None = None
+    level: str | None = None
+    semester: str | None = None
+
+
+class CourseUpdate(BaseModel):
+    code: str | None = None
+    slug: str | None = None
+    title: str | None = None
+    description: str | None = None
+    level: str | None = None
+    semester: str | None = None

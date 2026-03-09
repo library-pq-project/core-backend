@@ -69,8 +69,8 @@ class LectureNoteService:
         )
         return self.repository.create(lecture_note)
 
-    def list_my_notes(self, user_id: int) -> list[LectureNote]:
-        return self.repository.list_by_user(user_id)
+    def list_my_notes(self, user_id: int, *, skip: int, limit: int) -> list[LectureNote]:
+        return self.repository.list_by_user(user_id, skip=skip, limit=limit)
 
     def get_my_note(self, lecture_note_id: int, user_id: int) -> LectureNote:
         lecture_note = self.repository.get_for_user(lecture_note_id, user_id)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
@@ -25,7 +25,9 @@ async def get_overview(
 
 @router.get("/me/topic-performance", response_model=list[TopicPerformanceRead])
 async def get_topic_performance(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
-    return service.get_topic_performance(current_user.id)
+    return service.get_topic_performance(current_user.id, skip=skip, limit=limit)

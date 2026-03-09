@@ -16,8 +16,8 @@ class AnalyticsService:
             average_accuracy=average_accuracy,
         )
 
-    def get_topic_performance(self, user_id: int) -> list[TopicPerformanceRead]:
-        records = self.repository.list_topic_performance(user_id)
+    def get_topic_performance(self, user_id: int, *, skip: int, limit: int) -> list[TopicPerformanceRead]:
+        records = self.repository.list_topic_performance(user_id, skip=skip, limit=limit)
         output: list[TopicPerformanceRead] = []
         for record in records:
             accuracy = 0.0

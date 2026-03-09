@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Form, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
@@ -28,10 +28,12 @@ async def upload_lecture_note(
 
 @router.get("", response_model=list[LectureNoteRead])
 async def list_lecture_notes(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     service: LectureNoteService = Depends(get_lecture_note_service),
 ):
-    return service.list_my_notes(current_user.id)
+    return service.list_my_notes(current_user.id, skip=skip, limit=limit)
 
 
 @router.get("/{lecture_note_id}", response_model=LectureNoteRead)

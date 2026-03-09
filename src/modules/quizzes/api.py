@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
@@ -33,10 +33,12 @@ async def create_quiz(
 
 @router.get("", response_model=list[QuizRead])
 async def list_quizzes(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     service: QuizService = Depends(get_quiz_service),
 ):
-    return service.list_quizzes(current_user.id)
+    return service.list_quizzes(current_user.id, skip=skip, limit=limit)
 
 
 @router.get("/{quiz_id}", response_model=QuizRead)
@@ -51,11 +53,14 @@ async def get_quiz(
 @router.get("/{quiz_id}/questions", response_model=list[QuizQuestionRead])
 async def get_quiz_questions(
     quiz_id: int,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     service: QuizService = Depends(get_quiz_service),
 ):
     quiz = service.get_quiz(quiz_id, current_user.id)
-    return sorted(quiz.quiz_questions, key=lambda item: item.sequence_number)
+    questions = sorted(quiz.quiz_questions, key=lambda item: item.sequence_number)
+    return questions[skip : skip + limit]
 
 
 @router.post("/{quiz_id}/start", response_model=QuizRead)
@@ -95,6 +100,8 @@ async def get_quiz_result(
 @router.get("/{quiz_id}/review", response_model=QuizReviewResponse)
 async def get_quiz_review(
     quiz_id: int,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -136,4 +143,4 @@ async def get_quiz_review(
             }
         )
 
-    return {"quiz_id": quiz_id, "items": items}
+    return {"quiz_id": quiz_id, "items": items[skip : skip + limit]}

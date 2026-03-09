@@ -8,8 +8,25 @@ class CourseRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def list(self) -> list[Course]:
-        return list(self.db.scalars(select(Course).order_by(Course.code)))
+    def list(self, *, skip: int, limit: int) -> list[Course]:
+        stmt = select(Course).order_by(Course.code).offset(skip).limit(limit)
+        return list(self.db.scalars(stmt))
 
     def get(self, course_id: int) -> Course | None:
         return self.db.get(Course, course_id)
+
+    def create(self, course: Course) -> Course:
+        self.db.add(course)
+        self.db.commit()
+        self.db.refresh(course)
+        return course
+
+    def save(self, course: Course) -> Course:
+        self.db.add(course)
+        self.db.commit()
+        self.db.refresh(course)
+        return course
+
+    def delete(self, course: Course) -> None:
+        self.db.delete(course)
+        self.db.commit()

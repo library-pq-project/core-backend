@@ -67,8 +67,8 @@ class QuizService:
 
         return self.repository.save_quiz(quiz)
 
-    def list_quizzes(self, user_id: int) -> list[Quiz]:
-        return self.repository.list_user_quizzes(user_id)
+    def list_quizzes(self, user_id: int, *, skip: int, limit: int) -> list[Quiz]:
+        return self.repository.list_user_quizzes(user_id, skip=skip, limit=limit)
 
     def get_quiz(self, quiz_id: int, user_id: int) -> Quiz:
         quiz = self.repository.get_user_quiz(quiz_id, user_id)

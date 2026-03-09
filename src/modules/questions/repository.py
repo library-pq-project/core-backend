@@ -16,6 +16,8 @@ class QuestionRepository:
         year: int | None,
         question_type: str | None,
         source_type: str | None,
+        skip: int,
+        limit: int,
     ) -> list[Question]:
         stmt: Select[tuple[Question]] = select(Question).options(selectinload(Question.options))
 
@@ -30,9 +32,25 @@ class QuestionRepository:
         if source_type is not None:
             stmt = stmt.where(Question.source_type == source_type)
 
-        stmt = stmt.order_by(Question.created_at.desc())
+        stmt = stmt.order_by(Question.created_at.desc()).offset(skip).limit(limit)
         return list(self.db.scalars(stmt))
 
     def get(self, question_id: int) -> Question | None:
         stmt = select(Question).options(selectinload(Question.options)).where(Question.id == question_id)
         return self.db.scalar(stmt)
+
+    def create(self, question: Question) -> Question:
+        self.db.add(question)
+        self.db.commit()
+        self.db.refresh(question)
+        return question
+
+    def save(self, question: Question) -> Question:
+        self.db.add(question)
+        self.db.commit()
+        self.db.refresh(question)
+        return question
+
+    def delete(self, question: Question) -> None:
+        self.db.delete(question)
+        self.db.commit()

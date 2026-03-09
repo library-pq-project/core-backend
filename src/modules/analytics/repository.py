@@ -23,8 +23,9 @@ class AnalyticsRepository:
         self.db.refresh(record)
         return record
 
-    def list_topic_performance(self, user_id: int) -> list[TopicPerformance]:
+    def list_topic_performance(self, user_id: int, *, skip: int, limit: int) -> list[TopicPerformance]:
         stmt = select(TopicPerformance).where(TopicPerformance.user_id == user_id)
+        stmt = stmt.offset(skip).limit(limit)
         return list(self.db.scalars(stmt))
 
     def overview(self, user_id: int) -> tuple[int, int, int, float]:

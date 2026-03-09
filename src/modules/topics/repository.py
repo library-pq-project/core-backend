@@ -8,11 +8,28 @@ class TopicRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def list(self, course_id: int | None = None) -> list[Topic]:
+    def list(self, *, course_id: int | None = None, skip: int, limit: int) -> list[Topic]:
         stmt = select(Topic).order_by(Topic.name)
-        if course_id:
+        if course_id is not None:
             stmt = stmt.where(Topic.course_id == course_id)
+        stmt = stmt.offset(skip).limit(limit)
         return list(self.db.scalars(stmt))
 
     def get(self, topic_id: int) -> Topic | None:
         return self.db.get(Topic, topic_id)
+
+    def create(self, topic: Topic) -> Topic:
+        self.db.add(topic)
+        self.db.commit()
+        self.db.refresh(topic)
+        return topic
+
+    def save(self, topic: Topic) -> Topic:
+        self.db.add(topic)
+        self.db.commit()
+        self.db.refresh(topic)
+        return topic
+
+    def delete(self, topic: Topic) -> None:
+        self.db.delete(topic)
+        self.db.commit()

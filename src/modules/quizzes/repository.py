@@ -9,8 +9,9 @@ class QuizRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def list_user_quizzes(self, user_id: int) -> list[Quiz]:
+    def list_user_quizzes(self, user_id: int, *, skip: int, limit: int) -> list[Quiz]:
         stmt = select(Quiz).where(Quiz.user_id == user_id).order_by(Quiz.created_at.desc())
+        stmt = stmt.offset(skip).limit(limit)
         return list(self.db.scalars(stmt))
 
     def get_user_quiz(self, quiz_id: int, user_id: int) -> Quiz | None:

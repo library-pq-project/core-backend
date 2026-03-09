@@ -14,8 +14,9 @@ class LectureNoteRepository:
         self.db.refresh(lecture_note)
         return lecture_note
 
-    def list_by_user(self, user_id: int) -> list[LectureNote]:
+    def list_by_user(self, user_id: int, *, skip: int, limit: int) -> list[LectureNote]:
         stmt = select(LectureNote).where(LectureNote.user_id == user_id).order_by(LectureNote.created_at.desc())
+        stmt = stmt.offset(skip).limit(limit)
         return list(self.db.scalars(stmt))
 
     def get_for_user(self, lecture_note_id: int, user_id: int) -> LectureNote | None:
