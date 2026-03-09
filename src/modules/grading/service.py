@@ -1,0 +1,157 @@
+from fastapi import HTTPException, status
+
+from src.common.enums import GradedBy, QuizStatus
+from src.common.utils import now_utc
+from src.modules.analytics.models import TopicPerformance
+from src.modules.analytics.repository import AnalyticsRepository
+from src.modules.grading.repository import GradingRepository
+from src.modules.quizzes.models import QuizResult
+from src.modules.quizzes.repository import QuizRepository
+
+
+class GradingService:
+    def __init__(
+        self,
+        grading_repository: GradingRepository,
+        quiz_repository: QuizRepository,
+        analytics_repository: AnalyticsRepository,
+    ):
+        self.grading_repository = grading_repository
+        self.quiz_repository = quiz_repository
+        self.analytics_repository = analytics_repository
+
+    def _weakness_level(self, accuracy: float) -> str:
+        if accuracy >= 70:
+            return "low"
+        if accuracy >= 40:
+            return "medium"
+        return "high"
+
+    def grade_quiz(self, quiz_id: int, user_id: int) -> QuizResult:
+        quiz = self.grading_repository.get_quiz_for_grading(quiz_id, user_id)
+        if not quiz:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
+        if quiz.status == QuizStatus.GRADED.value and quiz.result:
+            return quiz.result
+
+        responses = {response.quiz_question_id: response for response in self.grading_repository.list_responses(quiz_id, user_id)}
+
+        total_score = 0.0
+        max_score = 0.0
+        correct_count = 0
+        wrong_count = 0
+        unanswered_count = 0
+
+        topic_attempted = 0
+        topic_correct = 0
+
+        for quiz_question in quiz.quiz_questions:
+            max_score += float(quiz_question.marks)
+            response = responses.get(quiz_question.id)
+
+            if response is None:
+                unanswered_count += 1
+                continue
+
+            is_correct = False
+            awarded = 0.0
+            feedback = ""
+            graded_by = GradedBy.AUTO.value
+
+            if quiz_question.question_type == "objective":
+                chosen = None
+                if response.selected_quiz_question_option_id is not None:
+                    chosen = next(
+                        (item for item in quiz_question.options if item.id == response.selected_quiz_question_option_id),
+                        None,
+                    )
+                if chosen and chosen.is_correct_snapshot:
+                    is_correct = True
+                    awarded = float(quiz_question.marks)
+                    feedback = "Correct answer."
+                else:
+                    feedback = "Incorrect answer."
+            else:
+                model_solution = (quiz_question.question.solution_text or "").strip().lower() if quiz_question.question else ""
+                student_answer = (response.answer_text or "").strip().lower()
+                if model_solution and student_answer and model_solution in student_answer:
+                    is_correct = True
+                    awarded = float(quiz_question.marks)
+                    feedback = "Answer matches expected solution."
+                else:
+                    awarded = float(quiz_question.marks) * 0.5 if student_answer else 0.0
+                    feedback = "Partially graded by AI stub rules."
+                graded_by = GradedBy.AI.value
+
+            response.is_correct = is_correct
+            response.score_awarded = awarded
+            response.feedback = feedback
+            response.graded_by = graded_by
+            response.graded_at = now_utc()
+
+            total_score += awarded
+            topic_attempted += 1
+            if is_correct:
+                topic_correct += 1
+                correct_count += 1
+            else:
+                wrong_count += 1
+
+        percentage = (total_score / max_score * 100) if max_score > 0 else 0.0
+
+        if quiz.result:
+            result = quiz.result
+            result.total_score = total_score
+            result.max_score = max_score
+            result.percentage_score = percentage
+            result.correct_count = correct_count
+            result.wrong_count = wrong_count
+            result.unanswered_count = unanswered_count
+        else:
+            result = QuizResult(
+                quiz_id=quiz.id,
+                user_id=user_id,
+                total_score=total_score,
+                max_score=max_score,
+                percentage_score=percentage,
+                correct_count=correct_count,
+                wrong_count=wrong_count,
+                unanswered_count=unanswered_count,
+            )
+            self.quiz_repository.save_result(result)
+
+        quiz.status = QuizStatus.GRADED.value
+        self.grading_repository.commit()
+
+        # Update topic analytics every time quiz is graded.
+        topic_record = self.analytics_repository.get_topic_performance(
+            user_id=user_id,
+            course_id=quiz.course_id,
+            topic_id=quiz.topic_id,
+        )
+
+        if topic_record is None:
+            topic_record = TopicPerformance(
+                user_id=user_id,
+                course_id=quiz.course_id,
+                topic_id=quiz.topic_id,
+                questions_attempted=0,
+                questions_correct=0,
+                average_score=0,
+                weakness_level="high",
+                last_updated=now_utc(),
+            )
+
+        topic_record.questions_attempted += topic_attempted
+        topic_record.questions_correct += topic_correct
+        accuracy = (
+            (topic_record.questions_correct / topic_record.questions_attempted) * 100
+            if topic_record.questions_attempted > 0
+            else 0
+        )
+        topic_record.average_score = accuracy
+        topic_record.weakness_level = self._weakness_level(accuracy)
+        topic_record.last_updated = now_utc()
+        self.analytics_repository.save_topic_performance(topic_record)
+
+        return result
