@@ -1,5 +1,5 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from src.modules.academic.models import (
     AcademicCalendarState,
@@ -11,6 +11,7 @@ from src.modules.academic.models import (
 )
 from src.modules.auth.models import User
 from src.modules.courses.models import Course
+from src.modules.questions.models import Question
 
 
 class AcademicRepository:
@@ -122,4 +123,27 @@ class AcademicRepository:
             .offset(skip)
             .limit(limit)
         )
+        return list(self.db.scalars(stmt))
+
+    def list_assessment_questions(
+        self,
+        *,
+        assessment_id: int,
+        question_type: str | None,
+        source_type: str | None,
+        skip: int,
+        limit: int,
+    ) -> list[Question]:
+        stmt = (
+            select(Question)
+            .options(selectinload(Question.options))
+            .where(Question.assessment_id == assessment_id)
+            .order_by(Question.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        if question_type is not None:
+            stmt = stmt.where(Question.question_type == question_type)
+        if source_type is not None:
+            stmt = stmt.where(Question.source_type == source_type)
         return list(self.db.scalars(stmt))

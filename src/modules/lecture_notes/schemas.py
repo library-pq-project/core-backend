@@ -10,6 +10,9 @@ class LectureNoteRead(BaseModel):
     title: str
     slug: str
     original_file_name: str
+    storage_provider: str
+    storage_bucket: str | None
+    storage_key: str | None
     file_type: str
     file_size: int
     text_extraction_status: str

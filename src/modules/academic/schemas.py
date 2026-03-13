@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AcademicSessionCreate(BaseModel):
@@ -84,6 +84,7 @@ class AssessmentCreate(BaseModel):
     semester_id: int | None = None
     assessment_type: str
     question_format: str
+    default_duration_minutes: int = Field(default=60, ge=1, le=600)
     year_label: str | None = None
 
 
@@ -94,6 +95,7 @@ class AssessmentRead(BaseModel):
     semester_id: int | None
     assessment_type: str
     question_format: str
+    default_duration_minutes: int
     year_label: str | None
     slug: str
 

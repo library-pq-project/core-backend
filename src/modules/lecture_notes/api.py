@@ -7,12 +7,13 @@ from src.modules.auth.models import User
 from src.modules.lecture_notes.repository import LectureNoteRepository
 from src.modules.lecture_notes.schemas import LectureNoteRead
 from src.modules.lecture_notes.service import LectureNoteService
+from src.modules.lecture_notes.storage import build_storage_provider
 
 router = APIRouter()
 
 
 def get_lecture_note_service(db: Session = Depends(get_db)) -> LectureNoteService:
-    return LectureNoteService(LectureNoteRepository(db))
+    return LectureNoteService(LectureNoteRepository(db), build_storage_provider())
 
 
 @router.post("", response_model=LectureNoteRead, status_code=status.HTTP_201_CREATED)

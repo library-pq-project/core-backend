@@ -20,6 +20,7 @@ from src.modules.academic.schemas import (
     SemesterCreate,
 )
 from src.modules.auth.models import User
+from src.modules.questions.models import Question
 
 
 class AcademicService:
@@ -127,6 +128,7 @@ class AcademicService:
                 semester_id=payload.semester_id,
                 assessment_type=payload.assessment_type,
                 question_format=payload.question_format,
+                default_duration_minutes=payload.default_duration_minutes,
                 year_label=payload.year_label,
                 slug=slug,
             )
@@ -168,6 +170,26 @@ class AcademicService:
             student=student,
             academic_session_id=active.academic_session_id,
             semester_id=active.semester_id,
+            skip=skip,
+            limit=limit,
+        )
+
+    def list_questions_in_assessment(
+        self,
+        *,
+        assessment_id: int,
+        question_type: str | None,
+        source_type: str | None,
+        skip: int,
+        limit: int,
+    ) -> list[Question]:
+        assessment = self.repository.get_assessment(assessment_id)
+        if assessment is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found")
+        return self.repository.list_assessment_questions(
+            assessment_id=assessment_id,
+            question_type=question_type,
+            source_type=source_type,
             skip=skip,
             limit=limit,
         )

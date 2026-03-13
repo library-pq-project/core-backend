@@ -7,6 +7,7 @@ from src.modules.auth.api import get_current_user
 from src.modules.auth.models import User
 from src.modules.quizzes.repository import QuizRepository
 from src.modules.quizzes.schemas import (
+    QuizAttemptQuestionRead,
     QuizAttemptRead,
     QuizCreate,
     QuizQuestionRead,
@@ -14,6 +15,7 @@ from src.modules.quizzes.schemas import (
     QuizReviewResponse,
     QuizResultRead,
     QuizSubmitInput,
+    StartAttemptInput,
 )
 from src.modules.quizzes.service import QuizService
 
@@ -65,13 +67,49 @@ async def get_quiz_questions(
     return questions[skip : skip + limit]
 
 
+@router.get("/{quiz_id}/in-progress-questions", response_model=list[QuizAttemptQuestionRead])
+async def get_in_progress_questions(
+    quiz_id: int,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    service: QuizService = Depends(get_quiz_service),
+):
+    quiz, attempt = service.get_in_progress_questions(quiz_id, current_user.id)
+    responses = {
+        response.quiz_question_id: response
+        for response in QuizRepository(db).list_responses_for_attempt(attempt.id, current_user.id)
+    }
+    questions = sorted(quiz.quiz_questions, key=lambda item: item.sequence_number)[skip : skip + limit]
+    return [
+        {
+            "quiz_question_id": question.id,
+            "question_text": question.question_snapshot_text,
+            "question_type": question.question_type,
+            "sequence_number": question.sequence_number,
+            "options": sorted(question.options, key=lambda item: item.display_order),
+            "selected_quiz_question_option_id": responses.get(question.id).selected_quiz_question_option_id
+            if responses.get(question.id)
+            else None,
+            "answer_text": responses.get(question.id).answer_text if responses.get(question.id) else None,
+        }
+        for question in questions
+    ]
+
+
 @router.post("/{quiz_id}/attempts/start", response_model=QuizAttemptRead)
 async def start_attempt(
     quiz_id: int,
+    payload: StartAttemptInput,
     current_user: User = Depends(get_current_user),
     service: QuizService = Depends(get_quiz_service),
 ):
-    return service.start_attempt(quiz_id, current_user.id)
+    return service.start_attempt(
+        quiz_id,
+        current_user.id,
+        selected_duration_minutes=payload.selected_duration_minutes,
+    )
 
 
 @router.post("/{quiz_id}/start", response_model=QuizRead)

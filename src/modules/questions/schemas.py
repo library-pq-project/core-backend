@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -20,6 +21,8 @@ class QuestionRead(BaseModel):
     lecture_note_id: int | None
     year: int | None
     question_text: str
+    source_text: str | None
+    content_format: Literal["plain_text", "markdown_latex"]
     question_type: str
     source_type: str
     difficulty_level: str | None
@@ -43,7 +46,9 @@ class QuestionCreate(BaseModel):
     topic_id: int | None = None
     lecture_note_id: int | None = None
     year: int | None = None
-    question_text: str
+    question_text: str | None = None
+    source_text: str | None = None
+    content_format: Literal["plain_text", "markdown_latex"] = "plain_text"
     question_type: str
     source_type: str
     difficulty_level: str | None = None
@@ -61,6 +66,8 @@ class QuestionUpdate(BaseModel):
     lecture_note_id: int | None = None
     year: int | None = None
     question_text: str | None = None
+    source_text: str | None = None
+    content_format: Literal["plain_text", "markdown_latex"] | None = None
     question_type: str | None = None
     source_type: str | None = None
     difficulty_level: str | None = None

@@ -28,6 +28,8 @@ class Question(Base):
     )
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_format: Mapped[str] = mapped_column(String(30), nullable=False, default="plain_text")
     question_type: Mapped[str] = mapped_column(String(30), nullable=False)
     source_type: Mapped[str] = mapped_column(String(30), nullable=False)
     difficulty_level: Mapped[str | None] = mapped_column(String(30), nullable=True)

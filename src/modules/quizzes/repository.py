@@ -1,6 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from src.modules.academic.models import Assessment
 from src.modules.questions.models import Question
 from src.modules.quizzes.models import Quiz, QuizAttempt, QuizQuestion, QuizResponse, QuizResult
 
@@ -33,6 +34,10 @@ class QuizRepository:
         )
         return self.db.scalar(stmt)
 
+    def get_attempt_by_id(self, attempt_id: int, user_id: int) -> QuizAttempt | None:
+        stmt = select(QuizAttempt).where(QuizAttempt.id == attempt_id, QuizAttempt.user_id == user_id)
+        return self.db.scalar(stmt)
+
     def get_latest_attempt(self, quiz_id: int, user_id: int) -> QuizAttempt | None:
         stmt = (
             select(QuizAttempt)
@@ -46,12 +51,15 @@ class QuizRepository:
         self,
         *,
         course_id: int,
+        assessment_id: int | None,
         topic_id: int | None,
         question_source_mode: str,
         question_type_mode: str | None,
         total_questions: int,
     ) -> list[Question]:
         stmt = select(Question).options(selectinload(Question.options)).where(Question.course_id == course_id)
+        if assessment_id is not None:
+            stmt = stmt.where(Question.assessment_id == assessment_id)
 
         if topic_id is not None:
             stmt = stmt.where(Question.topic_id == topic_id)
@@ -78,6 +86,9 @@ class QuizRepository:
         self.db.commit()
         self.db.refresh(attempt)
         return attempt
+
+    def get_assessment(self, assessment_id: int) -> Assessment | None:
+        return self.db.get(Assessment, assessment_id)
 
     def upsert_response(self, response: QuizResponse) -> QuizResponse:
         self.db.add(response)

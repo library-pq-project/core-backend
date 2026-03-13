@@ -1,22 +1,21 @@
 import os
-import uuid
 
 from docx import Document
 from fastapi import HTTPException, UploadFile, status
 from pypdf import PdfReader
 
 from src.common.utils import generate_slug
-from src.core.config import settings
 from src.modules.lecture_notes.models import LectureNote
 from src.modules.lecture_notes.repository import LectureNoteRepository
+from src.modules.lecture_notes.storage import FileStorageProvider
 
 
 class LectureNoteService:
     SUPPORTED_TYPES = {"pdf", "docx", "txt"}
 
-    def __init__(self, repository: LectureNoteRepository):
+    def __init__(self, repository: LectureNoteRepository, storage_provider: FileStorageProvider):
         self.repository = repository
-        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+        self.storage_provider = storage_provider
 
     def _extract_text(self, file_path: str, extension: str) -> tuple[str | None, str]:
         try:
@@ -45,23 +44,25 @@ class LectureNoteService:
         if extension not in self.SUPPORTED_TYPES:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported file type")
 
-        unique_name = f"{uuid.uuid4().hex}.{extension}"
-        file_path = os.path.join(settings.UPLOAD_DIR, unique_name)
-
         content = await upload_file.read()
-        with open(file_path, "wb") as file:
-            file.write(content)
+        stored = self.storage_provider.save(
+            original_name=upload_file.filename or f"upload.{extension}",
+            content=content,
+        )
 
-        extracted_text, extraction_status = self._extract_text(file_path, extension)
+        extracted_text, extraction_status = self._extract_text(stored.path, extension)
 
         lecture_note = LectureNote(
             user_id=user_id,
             course_id=course_id,
             title=title,
             slug=generate_slug(title),
-            original_file_name=upload_file.filename or unique_name,
-            stored_file_name=unique_name,
-            file_path=file_path,
+            original_file_name=upload_file.filename or stored.key,
+            stored_file_name=stored.key,
+            storage_provider=stored.provider,
+            storage_bucket=stored.bucket,
+            storage_key=stored.key,
+            file_path=stored.path,
             file_type=extension,
             file_size=len(content),
             extracted_text=extracted_text,
@@ -80,6 +81,6 @@ class LectureNoteService:
 
     def delete_my_note(self, lecture_note_id: int, user_id: int) -> None:
         lecture_note = self.get_my_note(lecture_note_id, user_id)
-        if os.path.exists(lecture_note.file_path):
-            os.remove(lecture_note.file_path)
+        if lecture_note.storage_provider == "local" and lecture_note.file_path and os.path.exists(lecture_note.file_path):
+            self.storage_provider.delete(key=lecture_note.storage_key or lecture_note.stored_file_name, path=lecture_note.file_path)
         self.repository.delete(lecture_note)

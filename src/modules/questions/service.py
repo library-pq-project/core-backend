@@ -44,13 +44,21 @@ class QuestionService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="assessment_id is required",
             )
+        source_text = payload.source_text or payload.question_text
+        if source_text is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either source_text or question_text is required",
+            )
         question = Question(
             assessment_id=payload.assessment_id,
             course_id=payload.course_id,
             topic_id=payload.topic_id,
             lecture_note_id=payload.lecture_note_id,
             year=payload.year,
-            question_text=payload.question_text,
+            question_text=payload.question_text or source_text,
+            source_text=source_text,
+            content_format=payload.content_format,
             question_type=payload.question_type,
             source_type=payload.source_type,
             difficulty_level=payload.difficulty_level,
@@ -80,6 +88,8 @@ class QuestionService:
             "lecture_note_id",
             "year",
             "question_text",
+            "source_text",
+            "content_format",
             "question_type",
             "source_type",
             "difficulty_level",

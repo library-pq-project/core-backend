@@ -12,6 +12,10 @@ class Quiz(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
+    assessment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("assessments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     topic_id: Mapped[int | None] = mapped_column(ForeignKey("topics.id", ondelete="SET NULL"), nullable=True)
     academic_session_id: Mapped[int | None] = mapped_column(
         ForeignKey("academic_sessions.id", ondelete="SET NULL"),
@@ -47,7 +51,10 @@ class QuizAttempt(Base):
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="in_progress")
     started_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expected_end_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     submitted_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_used_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    selected_duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60, server_default="60")
     graded_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

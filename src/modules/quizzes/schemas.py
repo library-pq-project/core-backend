@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class QuizCreate(BaseModel):
     title: str
     course_id: int
+    assessment_id: int | None = None
     topic_id: int | None = None
     academic_session_id: int | None = None
     semester_id: int | None = None
@@ -21,6 +22,7 @@ class QuizRead(BaseModel):
     title: str
     slug: str
     course_id: int
+    assessment_id: int | None
     topic_id: int | None
     academic_session_id: int | None
     semester_id: int | None
@@ -73,7 +75,10 @@ class QuizAttemptRead(BaseModel):
     attempt_number: int
     status: str
     started_at: datetime
+    expected_end_at: datetime | None
     submitted_at: datetime | None
+    duration_used_seconds: int | None
+    selected_duration_minutes: int
     graded_at: datetime | None
 
     model_config = {"from_attributes": True}
@@ -111,3 +116,17 @@ class QuizReviewResponse(BaseModel):
     quiz_id: int
     attempt_id: int
     items: list[QuizReviewItem]
+
+
+class StartAttemptInput(BaseModel):
+    selected_duration_minutes: int | None = Field(default=None, ge=1, le=600)
+
+
+class QuizAttemptQuestionRead(BaseModel):
+    quiz_question_id: int
+    question_text: str
+    question_type: str
+    sequence_number: int
+    options: list[QuizQuestionOptionRead]
+    selected_quiz_question_option_id: int | None
+    answer_text: str | None
