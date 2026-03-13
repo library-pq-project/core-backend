@@ -4,6 +4,7 @@ from src.modules.questions.schemas import QuestionRead
 
 
 class AIQuestionGenerationCreate(BaseModel):
+    assessment_id: int | None = None
     course_id: int
     topic_id: int | None = None
     lecture_note_id: int | None = None

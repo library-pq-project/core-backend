@@ -20,10 +20,16 @@ class CourseService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
         return course
 
+    def get_course_by_slug(self, course_slug: str) -> Course:
+        course = self.repository.get_by_slug(course_slug)
+        if not course:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+        return course
+
     def create_course(self, payload: CourseCreate) -> Course:
         course = Course(
             code=payload.code,
-            slug=payload.slug or generate_slug(payload.code),
+            slug=generate_slug(payload.code),
             title=payload.title,
             description=payload.description,
             level=payload.level,
@@ -43,9 +49,7 @@ class CourseService:
 
         if "code" in updates:
             course.code = updates["code"]
-        if "slug" in updates:
-            course.slug = updates["slug"]
-        elif "title" in updates:
+        if "title" in updates:
             course.slug = generate_slug(updates["title"])
         if "title" in updates:
             course.title = updates["title"]

@@ -9,6 +9,10 @@ class AIQuestionGenerationRequest(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    assessment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("assessments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
     topic_id: Mapped[int] = mapped_column(ForeignKey("topics.id", ondelete="SET NULL"), nullable=True)
     lecture_note_id: Mapped[int] = mapped_column(ForeignKey("lecture_notes.id", ondelete="SET NULL"), nullable=True)

@@ -15,6 +15,9 @@ class CourseRepository:
     def get(self, course_id: int) -> Course | None:
         return self.db.get(Course, course_id)
 
+    def get_by_slug(self, slug: str) -> Course | None:
+        return self.db.scalar(select(Course).where(Course.slug == slug))
+
     def create(self, course: Course) -> Course:
         self.db.add(course)
         self.db.commit()

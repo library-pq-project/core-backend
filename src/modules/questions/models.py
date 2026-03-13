@@ -17,6 +17,10 @@ class Question(Base):
     __tablename__ = "questions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    assessment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("assessments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
     topic_id: Mapped[int] = mapped_column(ForeignKey("topics.id", ondelete="SET NULL"), nullable=True)
     lecture_note_id: Mapped[int | None] = mapped_column(
@@ -38,6 +42,7 @@ class Question(Base):
     )
 
     course = relationship("Course", back_populates="questions")
+    assessment = relationship("Assessment", back_populates="questions")
     topic = relationship("Topic", back_populates="questions")
     lecture_note = relationship("LectureNote", back_populates="questions")
     options = relationship("QuestionOption", back_populates="question", cascade="all, delete-orphan")

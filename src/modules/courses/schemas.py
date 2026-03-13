@@ -15,7 +15,6 @@ class CourseRead(BaseModel):
 
 class CourseCreate(BaseModel):
     code: str
-    slug: str | None = None
     title: str
     description: str | None = None
     level: str | None = None
@@ -24,7 +23,6 @@ class CourseCreate(BaseModel):
 
 class CourseUpdate(BaseModel):
     code: str | None = None
-    slug: str | None = None
     title: str | None = None
     description: str | None = None
     level: str | None = None

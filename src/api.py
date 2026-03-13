@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from src.modules.academic.api import router as academic_router
 from src.modules.ai_generation.api import router as ai_generation_router
 from src.modules.analytics.api import router as analytics_router
 from src.modules.auth.api import router as auth_router
@@ -12,6 +13,7 @@ from src.modules.topics.api import router as topics_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["Auth"])
+api_router.include_router(academic_router, prefix="/academic", tags=["Academic"])
 api_router.include_router(courses_router, prefix="/courses", tags=["Courses"])
 api_router.include_router(topics_router, prefix="/topics", tags=["Topics"])
 api_router.include_router(lecture_notes_router, prefix="/lecture-notes", tags=["Lecture Notes"])

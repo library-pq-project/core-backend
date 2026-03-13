@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from src.common.enums import QuizStatus
 from src.db.session import get_db
 from src.modules.auth.api import get_current_user
 from src.modules.auth.models import User
 from src.modules.quizzes.repository import QuizRepository
 from src.modules.quizzes.schemas import (
+    QuizAttemptRead,
     QuizCreate,
     QuizQuestionRead,
     QuizRead,
@@ -63,6 +65,15 @@ async def get_quiz_questions(
     return questions[skip : skip + limit]
 
 
+@router.post("/{quiz_id}/attempts/start", response_model=QuizAttemptRead)
+async def start_attempt(
+    quiz_id: int,
+    current_user: User = Depends(get_current_user),
+    service: QuizService = Depends(get_quiz_service),
+):
+    return service.start_attempt(quiz_id, current_user.id)
+
+
 @router.post("/{quiz_id}/start", response_model=QuizRead)
 async def start_quiz(
     quiz_id: int,
@@ -70,6 +81,22 @@ async def start_quiz(
     service: QuizService = Depends(get_quiz_service),
 ):
     return service.start_quiz(quiz_id, current_user.id)
+
+
+@router.post("/{quiz_id}/attempts/{attempt_id}/submit", response_model=QuizAttemptRead)
+async def submit_attempt(
+    quiz_id: int,
+    attempt_id: int,
+    payload: QuizSubmitInput,
+    current_user: User = Depends(get_current_user),
+    service: QuizService = Depends(get_quiz_service),
+):
+    return service.submit_quiz_for_attempt(
+        quiz_id=quiz_id,
+        user_id=current_user.id,
+        attempt_id=attempt_id,
+        payload=payload,
+    )
 
 
 @router.post("/{quiz_id}/submit", response_model=QuizRead)
@@ -85,33 +112,43 @@ async def submit_quiz(
 @router.get("/{quiz_id}/result", response_model=QuizResultRead)
 async def get_quiz_result(
     quiz_id: int,
+    attempt_id: int | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     repository = QuizRepository(db)
-    result = repository.get_result(quiz_id, current_user.id)
+    result = repository.get_result(quiz_id, current_user.id, attempt_id=attempt_id)
     if not result:
-        from fastapi import HTTPException, status
-
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz result not found")
     return result
 
 
-@router.get("/{quiz_id}/review", response_model=QuizReviewResponse)
-async def get_quiz_review(
+@router.get("/{quiz_id}/attempts/{attempt_id}/review", response_model=QuizReviewResponse)
+async def get_attempt_review(
     quiz_id: int,
+    attempt_id: int,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    quiz = QuizRepository(db).get_user_quiz(quiz_id, current_user.id)
+    repository = QuizRepository(db)
+    quiz = repository.get_user_quiz(quiz_id, current_user.id)
     if not quiz:
-        from fastapi import HTTPException, status
-
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
 
-    responses = {response.quiz_question_id: response for response in QuizRepository(db).list_responses_for_quiz(quiz_id, current_user.id)}
+    attempt = repository.get_attempt(quiz_id, attempt_id, current_user.id)
+    if not attempt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+
+    responses = {
+        response.quiz_question_id: response
+        for response in repository.list_responses_for_attempt(attempt_id, current_user.id)
+    }
+
+    allow_correct_visibility = bool(
+        quiz.reveal_answers_post_submit and attempt.status in [QuizStatus.SUBMITTED.value, QuizStatus.GRADED.value]
+    )
 
     items = []
     for quiz_question in sorted(quiz.quiz_questions, key=lambda item: item.sequence_number):
@@ -123,7 +160,7 @@ async def get_quiz_review(
                 (option for option in quiz_question.options if option.id == response.selected_quiz_question_option_id),
                 None,
             )
-        if quiz_question.question_type == "objective":
+        if allow_correct_visibility and quiz_question.question_type == "objective":
             correct_option = next((option for option in quiz_question.options if option.is_correct_snapshot), None)
 
         items.append(
@@ -137,10 +174,31 @@ async def get_quiz_review(
                 "correct_option_text": correct_option.option_text_snapshot if correct_option else None,
                 "answer_text": response.answer_text if response else None,
                 "feedback": response.feedback if response else None,
-                "explanation": quiz_question.question.explanation if quiz_question.question else None,
+                "explanation": quiz_question.question.explanation if quiz_question.question and allow_correct_visibility else None,
                 "is_correct": response.is_correct if response else None,
                 "score_awarded": float(response.score_awarded) if response and response.score_awarded is not None else None,
             }
         )
 
-    return {"quiz_id": quiz_id, "items": items[skip : skip + limit]}
+    return {"quiz_id": quiz_id, "attempt_id": attempt_id, "items": items[skip : skip + limit]}
+
+
+@router.get("/{quiz_id}/review", response_model=QuizReviewResponse)
+async def get_quiz_review(
+    quiz_id: int,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    latest = QuizRepository(db).get_latest_attempt(quiz_id, current_user.id)
+    if latest is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No attempt found")
+    return await get_attempt_review(
+        quiz_id=quiz_id,
+        attempt_id=latest.id,
+        skip=skip,
+        limit=limit,
+        current_user=current_user,
+        db=db,
+    )

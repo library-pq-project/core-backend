@@ -7,12 +7,14 @@ class QuestionOptionRead(BaseModel):
     id: int
     option_text: str
     position: int
+    is_correct: bool | None = None
 
     model_config = {"from_attributes": True}
 
 
 class QuestionRead(BaseModel):
     id: int
+    assessment_id: int | None
     course_id: int
     topic_id: int | None
     lecture_note_id: int | None
@@ -36,6 +38,7 @@ class QuestionOptionWrite(BaseModel):
 
 
 class QuestionCreate(BaseModel):
+    assessment_id: int | None = None
     course_id: int
     topic_id: int | None = None
     lecture_note_id: int | None = None
@@ -52,6 +55,7 @@ class QuestionCreate(BaseModel):
 
 
 class QuestionUpdate(BaseModel):
+    assessment_id: int | None = None
     course_id: int | None = None
     topic_id: int | None = None
     lecture_note_id: int | None = None

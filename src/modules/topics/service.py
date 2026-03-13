@@ -20,11 +20,20 @@ class TopicService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
         return topic
 
+    def get_topic_by_slug(self, topic_slug: str) -> Topic:
+        topic = self.repository.get_by_slug(topic_slug)
+        if not topic:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+        return topic
+
+    def list_topics_in_course_slug(self, course_slug: str, *, skip: int, limit: int) -> list[Topic]:
+        return self.repository.list_by_course_slug(course_slug, skip=skip, limit=limit)
+
     def create_topic(self, payload: TopicCreate) -> Topic:
         topic = Topic(
             course_id=payload.course_id,
             name=payload.name,
-            slug=payload.slug or generate_slug(payload.name),
+            slug=generate_slug(payload.name),
             description=payload.description,
         )
         try:
@@ -43,9 +52,7 @@ class TopicService:
             topic.course_id = updates["course_id"]
         if "name" in updates:
             topic.name = updates["name"]
-        if "slug" in updates:
-            topic.slug = updates["slug"]
-        elif "name" in updates:
+        if "name" in updates:
             topic.slug = generate_slug(updates["name"])
         if "description" in updates:
             topic.description = updates["description"]

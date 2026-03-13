@@ -13,17 +13,48 @@ class Quiz(Base):
     slug: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), nullable=False)
     topic_id: Mapped[int | None] = mapped_column(ForeignKey("topics.id", ondelete="SET NULL"), nullable=True)
+    academic_session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("academic_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    semester_id: Mapped[int | None] = mapped_column(
+        ForeignKey("semesters.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     question_source_mode: Mapped[str] = mapped_column(String(30), nullable=False)
     question_type_mode: Mapped[str | None] = mapped_column(String(30), nullable=True)
     total_questions: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3, server_default="3")
+    reveal_answers_post_submit: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="draft")
     started_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     submitted_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="quizzes")
+    attempts = relationship("QuizAttempt", back_populates="quiz", cascade="all, delete-orphan")
     quiz_questions = relationship("QuizQuestion", back_populates="quiz", cascade="all, delete-orphan")
-    result = relationship("QuizResult", back_populates="quiz", uselist=False, cascade="all, delete-orphan")
+    results = relationship("QuizResult", back_populates="quiz", cascade="all, delete-orphan")
+
+
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+    __table_args__ = (UniqueConstraint("quiz_id", "attempt_number", name="uq_quiz_attempt_number"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="in_progress")
+    started_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    submitted_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    graded_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    quiz = relationship("Quiz", back_populates="attempts")
+    user = relationship("User", back_populates="quiz_attempts")
+    responses = relationship("QuizResponse", back_populates="attempt", cascade="all, delete-orphan")
+    result = relationship("QuizResult", back_populates="attempt", uselist=False, cascade="all, delete-orphan")
 
 
 class QuizQuestion(Base):
@@ -66,6 +97,7 @@ class QuizResponse(Base):
     __tablename__ = "quiz_responses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    attempt_id: Mapped[int] = mapped_column(ForeignKey("quiz_attempts.id", ondelete="CASCADE"), nullable=False)
     quiz_question_id: Mapped[int] = mapped_column(
         ForeignKey("quiz_questions.id", ondelete="CASCADE"), nullable=False
     )
@@ -82,13 +114,17 @@ class QuizResponse(Base):
     graded_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     quiz_question = relationship("QuizQuestion", back_populates="responses")
+    attempt = relationship("QuizAttempt", back_populates="responses")
 
 
 class QuizResult(Base):
     __tablename__ = "quiz_results"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id", ondelete="CASCADE"), unique=True)
+    attempt_id: Mapped[int] = mapped_column(
+        ForeignKey("quiz_attempts.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     total_score: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     max_score: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
@@ -98,4 +134,5 @@ class QuizResult(Base):
     unanswered_count: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    quiz = relationship("Quiz", back_populates="result")
+    quiz = relationship("Quiz", back_populates="results")
+    attempt = relationship("QuizAttempt", back_populates="result")

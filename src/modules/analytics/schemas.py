@@ -16,3 +16,13 @@ class TopicPerformanceRead(BaseModel):
     questions_correct: int
     accuracy_rate: float
     weakness_level: str
+
+
+class AttemptTopicMetricRead(BaseModel):
+    attempt_id: int
+    course_id: int
+    topic_id: int | None
+    academic_session_id: int | None
+    attempted_count: int
+    correct_count: int
+    score: float

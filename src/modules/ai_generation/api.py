@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from src.db.session import get_db
 from src.modules.ai_generation.repository import AIQuestionGenerationRepository
 from src.modules.ai_generation.schemas import AIQuestionGenerationCreate, AIQuestionGenerationResponse
-from src.modules.ai_generation.service import AIQuestionGenerationService, AIQuestionStubClient
+from src.modules.ai_generation.service import AIQuestionGenerationService
+from src.modules.ai_generation.providers import GeminiQuestionGenerator
 from src.modules.auth.api import get_current_user
 from src.modules.auth.models import User
 from src.modules.lecture_notes.repository import LectureNoteRepository
@@ -16,7 +17,7 @@ def get_ai_generation_service(db: Session = Depends(get_db)) -> AIQuestionGenera
     return AIQuestionGenerationService(
         repository=AIQuestionGenerationRepository(db),
         lecture_note_repository=LectureNoteRepository(db),
-        ai_client=AIQuestionStubClient(),
+        ai_client=GeminiQuestionGenerator(),
     )
 
 

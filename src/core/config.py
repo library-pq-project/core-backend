@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     JWT_EXPIRE_MINUTES: int = 60
 
     UPLOAD_DIR: str = "uploads"
+    AI_PROVIDER: str = "gemini"
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_TIMEOUT_SECONDS: int = 30
+    GEMINI_MAX_RETRIES: int = 2
 
 
 settings = Settings()

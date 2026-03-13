@@ -1,7 +1,6 @@
-from dataclasses import dataclass
-
 from src.common.enums import GenerationStatus, QuestionSourceType
 from src.common.utils import make_fingerprint
+from src.modules.ai_generation.providers import AIQuestionGenerator
 from src.modules.ai_generation.models import AIQuestionGenerationRequest
 from src.modules.ai_generation.repository import AIQuestionGenerationRepository
 from src.modules.ai_generation.schemas import AIQuestionGenerationCreate
@@ -9,43 +8,12 @@ from src.modules.lecture_notes.repository import LectureNoteRepository
 from src.modules.questions.models import Question, QuestionOption
 
 
-@dataclass
-class GeneratedQuestionPayload:
-    question_text: str
-    options: list[str]
-    correct_index: int
-    solution_text: str
-    explanation: str
-
-
-class AIQuestionStubClient:
-    def generate_questions(
-        self,
-        *,
-        context_text: str,
-        question_type: str,
-        requested_count: int,
-    ) -> list[GeneratedQuestionPayload]:
-        generated: list[GeneratedQuestionPayload] = []
-        for i in range(1, requested_count + 1):
-            generated.append(
-                GeneratedQuestionPayload(
-                    question_text=f"[{question_type.upper()}] Generated question {i}: {context_text[:120]}",
-                    options=["Option A", "Option B", "Option C", "Option D"],
-                    correct_index=1,
-                    solution_text="Model answer placeholder",
-                    explanation="AI-generated explanation placeholder",
-                )
-            )
-        return generated
-
-
 class AIQuestionGenerationService:
     def __init__(
         self,
         repository: AIQuestionGenerationRepository,
         lecture_note_repository: LectureNoteRepository,
-        ai_client: AIQuestionStubClient,
+        ai_client: AIQuestionGenerator,
     ):
         self.repository = repository
         self.lecture_note_repository = lecture_note_repository
@@ -54,6 +22,7 @@ class AIQuestionGenerationService:
     def _build_fingerprint(self, payload: AIQuestionGenerationCreate, user_id: int) -> str:
         parts = [
             str(user_id),
+            str(payload.assessment_id or "none"),
             str(payload.course_id),
             str(payload.topic_id or "none"),
             str(payload.lecture_note_id or "none"),
@@ -76,6 +45,7 @@ class AIQuestionGenerationService:
         fingerprint = self._build_fingerprint(payload, user_id)
         request = AIQuestionGenerationRequest(
             user_id=user_id,
+            assessment_id=payload.assessment_id,
             course_id=payload.course_id,
             topic_id=payload.topic_id,
             lecture_note_id=payload.lecture_note_id,
@@ -103,6 +73,7 @@ class AIQuestionGenerationService:
         created_questions: list[Question] = []
         for generated in generated_payloads:
             question = Question(
+                assessment_id=payload.assessment_id,
                 course_id=payload.course_id,
                 topic_id=payload.topic_id,
                 lecture_note_id=payload.lecture_note_id,

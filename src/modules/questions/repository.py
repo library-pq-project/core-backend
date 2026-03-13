@@ -11,6 +11,7 @@ class QuestionRepository:
     def list(
         self,
         *,
+        assessment_id: int | None,
         course_id: int | None,
         topic_id: int | None,
         year: int | None,
@@ -21,6 +22,8 @@ class QuestionRepository:
     ) -> list[Question]:
         stmt: Select[tuple[Question]] = select(Question).options(selectinload(Question.options))
 
+        if assessment_id is not None:
+            stmt = stmt.where(Question.assessment_id == assessment_id)
         if course_id is not None:
             stmt = stmt.where(Question.course_id == course_id)
         if topic_id is not None:

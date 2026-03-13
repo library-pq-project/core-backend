@@ -12,6 +12,7 @@ class QuestionService:
     def list_questions(
         self,
         *,
+        assessment_id: int | None,
         course_id: int | None,
         topic_id: int | None,
         year: int | None,
@@ -22,6 +23,7 @@ class QuestionService:
     ) -> list[Question]:
         return self.repository.list(
             course_id=course_id,
+            assessment_id=assessment_id,
             topic_id=topic_id,
             year=year,
             question_type=question_type,
@@ -37,7 +39,13 @@ class QuestionService:
         return question
 
     def create_question(self, payload: QuestionCreate) -> Question:
+        if payload.assessment_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="assessment_id is required",
+            )
         question = Question(
+            assessment_id=payload.assessment_id,
             course_id=payload.course_id,
             topic_id=payload.topic_id,
             lecture_note_id=payload.lecture_note_id,
@@ -66,6 +74,7 @@ class QuestionService:
         updates = payload.model_dump(exclude_unset=True)
 
         for field in [
+            "assessment_id",
             "course_id",
             "topic_id",
             "lecture_note_id",

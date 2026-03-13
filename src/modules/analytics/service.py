@@ -1,6 +1,5 @@
-from src.modules.analytics.models import TopicPerformance
 from src.modules.analytics.repository import AnalyticsRepository
-from src.modules.analytics.schemas import AnalyticsOverview, TopicPerformanceRead
+from src.modules.analytics.schemas import AnalyticsOverview, AttemptTopicMetricRead, TopicPerformanceRead
 
 
 class AnalyticsService:
@@ -16,22 +15,51 @@ class AnalyticsService:
             average_accuracy=average_accuracy,
         )
 
-    def get_topic_performance(self, user_id: int, *, skip: int, limit: int) -> list[TopicPerformanceRead]:
-        records = self.repository.list_topic_performance(user_id, skip=skip, limit=limit)
+    def get_topic_performance(
+        self,
+        *,
+        user_id: int,
+        course_id: int | None = None,
+        academic_session_id: int | None = None,
+        topic_id: int | None = None,
+    ) -> list[TopicPerformanceRead]:
+        rows = self.repository.aggregate_topic_metrics(
+            user_id=user_id,
+            course_id=course_id,
+            academic_session_id=academic_session_id,
+            topic_id=topic_id,
+        )
         output: list[TopicPerformanceRead] = []
-        for record in records:
-            accuracy = 0.0
-            if record.questions_attempted > 0:
-                accuracy = (record.questions_correct / record.questions_attempted) * 100
+        for row in rows:
+            attempted = int(row[2] or 0)
+            correct = int(row[3] or 0)
+            avg_score = float(row[4] or 0)
+            accuracy = (correct / attempted * 100) if attempted else 0
+            weakness = "low" if accuracy >= 70 else "medium" if accuracy >= 40 else "high"
             output.append(
                 TopicPerformanceRead(
-                    course_id=record.course_id,
-                    topic_id=record.topic_id,
-                    topic_name=record.topic.name if record.topic else None,
-                    questions_attempted=record.questions_attempted,
-                    questions_correct=record.questions_correct,
+                    course_id=row[0],
+                    topic_id=row[1],
+                    topic_name=None,
+                    questions_attempted=attempted,
+                    questions_correct=correct,
                     accuracy_rate=round(accuracy, 2),
-                    weakness_level=record.weakness_level,
+                    weakness_level=weakness,
                 )
             )
         return output
+
+    def list_attempt_metrics(self, user_id: int, *, skip: int, limit: int) -> list[AttemptTopicMetricRead]:
+        records = self.repository.list_attempt_metrics(user_id, skip=skip, limit=limit)
+        return [
+            AttemptTopicMetricRead(
+                attempt_id=record.attempt_id,
+                course_id=record.course_id,
+                topic_id=record.topic_id,
+                academic_session_id=record.academic_session_id,
+                attempted_count=record.attempted_count,
+                correct_count=record.correct_count,
+                score=float(record.score),
+            )
+            for record in records
+        ]

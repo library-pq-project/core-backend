@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 
 from src.common.enums import QuizStatus
 from src.common.utils import generate_slug, now_utc
-from src.modules.quizzes.models import Quiz, QuizQuestion, QuizQuestionOption, QuizResponse
+from src.modules.quizzes.models import Quiz, QuizAttempt, QuizQuestion, QuizQuestionOption, QuizResponse
 from src.modules.quizzes.repository import QuizRepository
 from src.modules.quizzes.schemas import QuizCreate, QuizSubmitInput
 
@@ -17,6 +17,8 @@ class QuizService:
         selected_questions = self.repository.select_questions(
             course_id=payload.course_id,
             topic_id=payload.topic_id,
+            academic_session_id=payload.academic_session_id,
+            semester_id=payload.semester_id,
             question_source_mode=payload.question_source_mode,
             question_type_mode=payload.question_type_mode,
             total_questions=payload.total_questions,
@@ -37,6 +39,8 @@ class QuizService:
             question_source_mode=payload.question_source_mode,
             question_type_mode=payload.question_type_mode,
             total_questions=payload.total_questions,
+            max_attempts=payload.max_attempts,
+            reveal_answers_post_submit=payload.reveal_answers_post_submit,
             status=QuizStatus.DRAFT.value,
         )
 
@@ -49,7 +53,6 @@ class QuizService:
                 sequence_number=index,
             )
 
-            # Objective options are shuffled once and persisted for this quiz.
             if question.question_type == "objective":
                 canonical_options = list(question.options)
                 random.shuffle(canonical_options)
@@ -76,31 +79,55 @@ class QuizService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
         return quiz
 
-    def start_quiz(self, quiz_id: int, user_id: int) -> Quiz:
+    def start_attempt(self, quiz_id: int, user_id: int) -> QuizAttempt:
         quiz = self.get_quiz(quiz_id, user_id)
+        latest = self.repository.get_latest_attempt(quiz_id, user_id)
+        next_attempt_number = 1 if latest is None else latest.attempt_number + 1
+        if next_attempt_number > quiz.max_attempts:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum attempts reached")
+
+        attempt = QuizAttempt(
+            quiz_id=quiz_id,
+            user_id=user_id,
+            attempt_number=next_attempt_number,
+            status=QuizStatus.IN_PROGRESS.value,
+            started_at=now_utc(),
+        )
+
         if quiz.status == QuizStatus.DRAFT.value:
             quiz.status = QuizStatus.IN_PROGRESS.value
             quiz.started_at = now_utc()
             self.repository.commit()
-        return quiz
 
-    def submit_quiz(self, quiz_id: int, user_id: int, payload: QuizSubmitInput) -> Quiz:
-        quiz = self.get_quiz(quiz_id, user_id)
-        if quiz.status not in [QuizStatus.DRAFT.value, QuizStatus.IN_PROGRESS.value]:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quiz cannot be submitted")
+        return self.repository.save_attempt(attempt)
+
+    def start_quiz(self, quiz_id: int, user_id: int) -> Quiz:
+        self.start_attempt(quiz_id, user_id)
+        return self.get_quiz(quiz_id, user_id)
+
+    def _submit_for_attempt(
+        self, quiz: Quiz, user_id: int, attempt: QuizAttempt, payload: QuizSubmitInput
+    ) -> QuizAttempt:
+        if attempt.status != QuizStatus.IN_PROGRESS.value:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Attempt is not in progress")
 
         quiz_question_map = {question.id: question for question in quiz.quiz_questions}
         for response_item in payload.responses:
             if response_item.quiz_question_id not in quiz_question_map:
                 continue
 
-            existing = self.repository.find_response(response_item.quiz_question_id, user_id)
+            existing = self.repository.find_response(
+                attempt_id=attempt.id,
+                quiz_question_id=response_item.quiz_question_id,
+                user_id=user_id,
+            )
             if existing:
                 existing.selected_quiz_question_option_id = response_item.selected_quiz_question_option_id
                 existing.answer_text = response_item.answer_text
                 self.repository.commit()
             else:
                 response = QuizResponse(
+                    attempt_id=attempt.id,
                     quiz_question_id=response_item.quiz_question_id,
                     user_id=user_id,
                     selected_quiz_question_option_id=response_item.selected_quiz_question_option_id,
@@ -108,7 +135,31 @@ class QuizService:
                 )
                 self.repository.upsert_response(response)
 
+        attempt.status = QuizStatus.SUBMITTED.value
+        attempt.submitted_at = now_utc()
         quiz.status = QuizStatus.SUBMITTED.value
         quiz.submitted_at = now_utc()
         self.repository.commit()
-        return quiz
+        return attempt
+
+    def submit_quiz_for_attempt(
+        self,
+        *,
+        quiz_id: int,
+        user_id: int,
+        attempt_id: int,
+        payload: QuizSubmitInput,
+    ) -> QuizAttempt:
+        quiz = self.get_quiz(quiz_id, user_id)
+        attempt = self.repository.get_attempt(quiz_id, attempt_id, user_id)
+        if not attempt:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+        return self._submit_for_attempt(quiz, user_id, attempt, payload)
+
+    def submit_quiz(self, quiz_id: int, user_id: int, payload: QuizSubmitInput) -> Quiz:
+        quiz = self.get_quiz(quiz_id, user_id)
+        attempt = self.repository.get_latest_attempt(quiz_id, user_id)
+        if attempt is None:
+            attempt = self.start_attempt(quiz_id, user_id)
+        self._submit_for_attempt(quiz, user_id, attempt, payload)
+        return self.get_quiz(quiz_id, user_id)

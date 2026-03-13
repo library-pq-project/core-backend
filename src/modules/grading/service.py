@@ -2,7 +2,7 @@ from fastapi import HTTPException, status
 
 from src.common.enums import GradedBy, QuizStatus
 from src.common.utils import now_utc
-from src.modules.analytics.models import TopicPerformance
+from src.modules.analytics.models import AttemptTopicMetric, TopicPerformance
 from src.modules.analytics.repository import AnalyticsRepository
 from src.modules.grading.repository import GradingRepository
 from src.modules.quizzes.models import QuizResult
@@ -27,14 +27,29 @@ class GradingService:
             return "medium"
         return "high"
 
-    def grade_quiz(self, quiz_id: int, user_id: int) -> QuizResult:
+    def grade_quiz(self, quiz_id: int, user_id: int, attempt_id: int) -> QuizResult:
         quiz = self.grading_repository.get_quiz_for_grading(quiz_id, user_id)
         if not quiz:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
-        if quiz.status == QuizStatus.GRADED.value and quiz.result:
-            return quiz.result
 
-        responses = {response.quiz_question_id: response for response in self.grading_repository.list_responses(quiz_id, user_id)}
+        attempt = self.grading_repository.get_attempt(quiz_id, attempt_id, user_id)
+        if not attempt:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+
+        if attempt.status not in [QuizStatus.SUBMITTED.value, QuizStatus.GRADED.value]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Attempt must be submitted before grading",
+            )
+
+        existing_result = self.quiz_repository.get_result(quiz_id, user_id, attempt_id=attempt_id)
+        if existing_result:
+            return existing_result
+
+        responses = {
+            response.quiz_question_id: response
+            for response in self.grading_repository.list_attempt_responses(attempt_id, user_id)
+        }
 
         total_score = 0.0
         max_score = 0.0
@@ -80,7 +95,7 @@ class GradingService:
                     feedback = "Answer matches expected solution."
                 else:
                     awarded = float(quiz_question.marks) * 0.5 if student_answer else 0.0
-                    feedback = "Partially graded by AI stub rules."
+                    feedback = "Partially graded by AI policy."
                 graded_by = GradedBy.AI.value
 
             response.is_correct = is_correct
@@ -99,35 +114,29 @@ class GradingService:
 
         percentage = (total_score / max_score * 100) if max_score > 0 else 0.0
 
-        if quiz.result:
-            result = quiz.result
-            result.total_score = total_score
-            result.max_score = max_score
-            result.percentage_score = percentage
-            result.correct_count = correct_count
-            result.wrong_count = wrong_count
-            result.unanswered_count = unanswered_count
-        else:
-            result = QuizResult(
-                quiz_id=quiz.id,
-                user_id=user_id,
-                total_score=total_score,
-                max_score=max_score,
-                percentage_score=percentage,
-                correct_count=correct_count,
-                wrong_count=wrong_count,
-                unanswered_count=unanswered_count,
-            )
-            self.quiz_repository.save_result(result)
+        result = QuizResult(
+            attempt_id=attempt.id,
+            quiz_id=quiz.id,
+            user_id=user_id,
+            total_score=total_score,
+            max_score=max_score,
+            percentage_score=percentage,
+            correct_count=correct_count,
+            wrong_count=wrong_count,
+            unanswered_count=unanswered_count,
+        )
+        self.quiz_repository.save_result(result)
 
+        attempt.status = QuizStatus.GRADED.value
+        attempt.graded_at = now_utc()
         quiz.status = QuizStatus.GRADED.value
         self.grading_repository.commit()
 
-        # Update topic analytics every time quiz is graded.
         topic_record = self.analytics_repository.get_topic_performance(
             user_id=user_id,
             course_id=quiz.course_id,
             topic_id=quiz.topic_id,
+            academic_session_id=quiz.academic_session_id,
         )
 
         if topic_record is None:
@@ -135,6 +144,7 @@ class GradingService:
                 user_id=user_id,
                 course_id=quiz.course_id,
                 topic_id=quiz.topic_id,
+                academic_session_id=quiz.academic_session_id,
                 questions_attempted=0,
                 questions_correct=0,
                 average_score=0,
@@ -153,5 +163,19 @@ class GradingService:
         topic_record.weakness_level = self._weakness_level(accuracy)
         topic_record.last_updated = now_utc()
         self.analytics_repository.save_topic_performance(topic_record)
+
+        self.analytics_repository.create_attempt_metric(
+            AttemptTopicMetric(
+                attempt_id=attempt.id,
+                user_id=user_id,
+                course_id=quiz.course_id,
+                topic_id=quiz.topic_id,
+                academic_session_id=quiz.academic_session_id,
+                attempted_count=topic_attempted,
+                correct_count=topic_correct,
+                score=total_score,
+                created_at=now_utc(),
+            )
+        )
 
         return result

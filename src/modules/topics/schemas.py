@@ -14,12 +14,10 @@ class TopicRead(BaseModel):
 class TopicCreate(BaseModel):
     course_id: int
     name: str
-    slug: str | None = None
     description: str | None = None
 
 
 class TopicUpdate(BaseModel):
     course_id: int | None = None
     name: str | None = None
-    slug: str | None = None
     description: str | None = None
