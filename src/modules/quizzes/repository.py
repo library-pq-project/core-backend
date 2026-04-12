@@ -1,6 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from src.modules.analytics.models import AttemptTopicMetric
 from src.modules.academic.models import Assessment
 from src.modules.questions.models import Question
 from src.modules.quizzes.models import Quiz, QuizAttempt, QuizQuestion, QuizResponse, QuizResult
@@ -81,6 +82,46 @@ class QuizRepository:
         self.db.refresh(quiz)
         return quiz
 
+    def select_assessment_questions(
+        self,
+        *,
+        assessment_id: int,
+        topic_ids: list[int] | None,
+        desired_count: int,
+        question_type_mode: str | None,
+    ) -> list[Question]:
+        stmt = (
+            select(Question)
+            .options(selectinload(Question.options))
+            .where(
+                Question.assessment_id == assessment_id,
+                Question.is_active.is_(True),
+            )
+        )
+        if topic_ids:
+            stmt = stmt.where(Question.topic_id.in_(topic_ids))
+        if question_type_mode:
+            stmt = stmt.where(Question.question_type == question_type_mode)
+        stmt = stmt.order_by(func.random()).limit(desired_count)
+        return list(self.db.scalars(stmt))
+
+    def count_assessment_questions(
+        self,
+        *,
+        assessment_id: int,
+        topic_ids: list[int] | None,
+        question_type_mode: str | None,
+    ) -> int:
+        stmt = select(func.count(Question.id)).where(
+            Question.assessment_id == assessment_id,
+            Question.is_active.is_(True),
+        )
+        if topic_ids:
+            stmt = stmt.where(Question.topic_id.in_(topic_ids))
+        if question_type_mode:
+            stmt = stmt.where(Question.question_type == question_type_mode)
+        return int(self.db.scalar(stmt) or 0)
+
     def save_attempt(self, attempt: QuizAttempt) -> QuizAttempt:
         self.db.add(attempt)
         self.db.commit()
@@ -121,6 +162,14 @@ class QuizRepository:
         else:
             stmt = stmt.order_by(QuizResult.created_at.desc()).limit(1)
         return self.db.scalar(stmt)
+
+    def list_attempt_topic_metrics(self, attempt_id: int, user_id: int) -> list[AttemptTopicMetric]:
+        stmt = (
+            select(AttemptTopicMetric)
+            .where(AttemptTopicMetric.attempt_id == attempt_id, AttemptTopicMetric.user_id == user_id)
+            .order_by(AttemptTopicMetric.topic_id.asc().nulls_last())
+        )
+        return list(self.db.scalars(stmt))
 
     def commit(self) -> None:
         self.db.commit()

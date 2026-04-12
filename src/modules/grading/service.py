@@ -57,12 +57,12 @@ class GradingService:
         wrong_count = 0
         unanswered_count = 0
 
-        topic_attempted = 0
-        topic_correct = 0
+        topic_stats: dict[int | None, dict[str, float]] = {}
 
         for quiz_question in quiz.quiz_questions:
             max_score += float(quiz_question.marks)
             response = responses.get(quiz_question.id)
+            topic_id = quiz_question.question.topic_id if quiz_question.question else quiz.topic_id
 
             if response is None:
                 unanswered_count += 1
@@ -105,10 +105,13 @@ class GradingService:
             response.graded_at = now_utc()
 
             total_score += awarded
-            topic_attempted += 1
+            if topic_id not in topic_stats:
+                topic_stats[topic_id] = {"attempted": 0, "correct": 0, "score": 0.0}
+            topic_stats[topic_id]["attempted"] += 1
+            topic_stats[topic_id]["score"] += awarded
             if is_correct:
-                topic_correct += 1
                 correct_count += 1
+                topic_stats[topic_id]["correct"] += 1
             else:
                 wrong_count += 1
 
@@ -132,50 +135,55 @@ class GradingService:
         quiz.status = QuizStatus.GRADED.value
         self.grading_repository.commit()
 
-        topic_record = self.analytics_repository.get_topic_performance(
-            user_id=user_id,
-            course_id=quiz.course_id,
-            topic_id=quiz.topic_id,
-            academic_session_id=quiz.academic_session_id,
-        )
+        for topic_id, stats in topic_stats.items():
+            topic_attempted = int(stats["attempted"])
+            topic_correct = int(stats["correct"])
+            topic_score = float(stats["score"])
 
-        if topic_record is None:
-            topic_record = TopicPerformance(
+            topic_record = self.analytics_repository.get_topic_performance(
                 user_id=user_id,
                 course_id=quiz.course_id,
-                topic_id=quiz.topic_id,
+                topic_id=topic_id,
                 academic_session_id=quiz.academic_session_id,
-                questions_attempted=0,
-                questions_correct=0,
-                average_score=0,
-                weakness_level="high",
-                last_updated=now_utc(),
             )
 
-        topic_record.questions_attempted += topic_attempted
-        topic_record.questions_correct += topic_correct
-        accuracy = (
-            (topic_record.questions_correct / topic_record.questions_attempted) * 100
-            if topic_record.questions_attempted > 0
-            else 0
-        )
-        topic_record.average_score = accuracy
-        topic_record.weakness_level = self._weakness_level(accuracy)
-        topic_record.last_updated = now_utc()
-        self.analytics_repository.save_topic_performance(topic_record)
+            if topic_record is None:
+                topic_record = TopicPerformance(
+                    user_id=user_id,
+                    course_id=quiz.course_id,
+                    topic_id=topic_id,
+                    academic_session_id=quiz.academic_session_id,
+                    questions_attempted=0,
+                    questions_correct=0,
+                    average_score=0,
+                    weakness_level="high",
+                    last_updated=now_utc(),
+                )
 
-        self.analytics_repository.create_attempt_metric(
-            AttemptTopicMetric(
-                attempt_id=attempt.id,
-                user_id=user_id,
-                course_id=quiz.course_id,
-                topic_id=quiz.topic_id,
-                academic_session_id=quiz.academic_session_id,
-                attempted_count=topic_attempted,
-                correct_count=topic_correct,
-                score=total_score,
-                created_at=now_utc(),
+            topic_record.questions_attempted += topic_attempted
+            topic_record.questions_correct += topic_correct
+            accuracy = (
+                (topic_record.questions_correct / topic_record.questions_attempted) * 100
+                if topic_record.questions_attempted > 0
+                else 0
             )
-        )
+            topic_record.average_score = accuracy
+            topic_record.weakness_level = self._weakness_level(accuracy)
+            topic_record.last_updated = now_utc()
+            self.analytics_repository.save_topic_performance(topic_record)
+
+            self.analytics_repository.create_attempt_metric(
+                AttemptTopicMetric(
+                    attempt_id=attempt.id,
+                    user_id=user_id,
+                    course_id=quiz.course_id,
+                    topic_id=topic_id,
+                    academic_session_id=quiz.academic_session_id,
+                    attempted_count=topic_attempted,
+                    correct_count=topic_correct,
+                    score=topic_score,
+                    created_at=now_utc(),
+                )
+            )
 
         return result

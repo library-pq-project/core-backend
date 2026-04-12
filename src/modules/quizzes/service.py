@@ -48,6 +48,10 @@ class QuizService:
             status=QuizStatus.DRAFT.value,
         )
 
+        self._attach_questions_to_quiz(quiz=quiz, selected_questions=selected_questions)
+        return self.repository.save_quiz(quiz)
+
+    def _attach_questions_to_quiz(self, *, quiz: Quiz, selected_questions: list) -> None:
         for index, question in enumerate(selected_questions, start=1):
             quiz_question = QuizQuestion(
                 question_id=question.id,
@@ -72,7 +76,11 @@ class QuizService:
 
             quiz.quiz_questions.append(quiz_question)
 
-        return self.repository.save_quiz(quiz)
+    def _normalize_question_type_mode(self, question_format: str) -> str | None:
+        normalized = question_format.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized in ["objective", "theory", "practical", "case_based"]:
+            return normalized
+        return None
 
     def list_quizzes(self, user_id: int, *, skip: int, limit: int) -> list[Quiz]:
         return self.repository.list_user_quizzes(user_id, skip=skip, limit=limit)
@@ -211,6 +219,14 @@ class QuizService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No in-progress attempt found")
         return quiz, attempt
 
+    def get_in_progress_questions_with_responses(self, quiz_id: int, user_id: int):
+        quiz, attempt = self.get_in_progress_questions(quiz_id, user_id)
+        responses = {
+            response.quiz_question_id: response
+            for response in self.repository.list_responses_for_attempt(attempt.id, user_id)
+        }
+        return quiz, attempt, responses
+
     def get_attempt_questions(self, quiz_id: int, attempt_id: int, user_id: int):
         quiz = self.get_quiz(quiz_id, user_id)
         attempt = self.repository.get_attempt(quiz_id, attempt_id, user_id)
@@ -227,3 +243,69 @@ class QuizService:
         if attempt is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
         return self.get_attempt_questions(attempt.quiz_id, attempt_id, user_id)
+
+    def create_and_start_practice_from_assessment(
+        self,
+        *,
+        assessment_id: int,
+        user_id: int,
+        desired_question_count: int,
+        selected_topic_ids: list[int] | None,
+        selected_duration_minutes: int | None,
+        reveal_answers_post_submit: bool,
+    ):
+        assessment = self.repository.get_assessment(assessment_id)
+        if assessment is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found")
+
+        topic_ids = selected_topic_ids or None
+        question_type_mode = self._normalize_question_type_mode(assessment.question_format)
+
+        available_count = self.repository.count_assessment_questions(
+            assessment_id=assessment_id,
+            topic_ids=topic_ids,
+            question_type_mode=question_type_mode,
+        )
+        if desired_question_count > available_count:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Requested {desired_question_count} questions but only {available_count} are available",
+            )
+
+        selected_questions = self.repository.select_assessment_questions(
+            assessment_id=assessment_id,
+            topic_ids=topic_ids,
+            desired_count=desired_question_count,
+            question_type_mode=question_type_mode,
+        )
+        if len(selected_questions) < desired_question_count:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough questions for selected topics and format",
+            )
+
+        label = assessment.year_label or "Past Questions"
+        quiz = Quiz(
+            user_id=user_id,
+            title=f"{assessment.assessment_type} Practice ({label})",
+            slug=generate_slug(f"{assessment.slug}-{user_id}-{now_utc().isoformat()}"),
+            course_id=assessment.course_id,
+            assessment_id=assessment.id,
+            topic_id=topic_ids[0] if topic_ids and len(topic_ids) == 1 else None,
+            academic_session_id=assessment.academic_session_id,
+            semester_id=assessment.semester_id,
+            question_source_mode="actual_only",
+            question_type_mode=question_type_mode,
+            total_questions=desired_question_count,
+            max_attempts=1,
+            reveal_answers_post_submit=reveal_answers_post_submit,
+            status=QuizStatus.DRAFT.value,
+        )
+        self._attach_questions_to_quiz(quiz=quiz, selected_questions=selected_questions)
+        quiz = self.repository.save_quiz(quiz)
+        attempt = self.start_attempt(
+            quiz_id=quiz.id,
+            user_id=user_id,
+            selected_duration_minutes=selected_duration_minutes,
+        )
+        return quiz, attempt, available_count

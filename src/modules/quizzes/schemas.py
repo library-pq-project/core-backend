@@ -130,3 +130,29 @@ class QuizAttemptQuestionRead(BaseModel):
     options: list[QuizQuestionOptionRead]
     selected_quiz_question_option_id: int | None
     answer_text: str | None
+
+
+class AttemptTopicAnalysisRead(BaseModel):
+    topic_id: int | None
+    attempted_count: int
+    correct_count: int
+    accuracy_rate: float
+    score: float
+
+
+class AttemptResultRead(BaseModel):
+    attempt_id: int
+    quiz_id: int
+    status: str
+    started_at: datetime
+    expected_end_at: datetime | None
+    submitted_at: datetime | None
+    duration_used_seconds: int | None
+    selected_duration_minutes: int
+    total_score: float
+    max_score: float
+    percentage_score: float
+    correct_count: int
+    wrong_count: int
+    unanswered_count: int
+    topic_analysis: list[AttemptTopicAnalysisRead]
