@@ -1,4 +1,4 @@
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db.base import Base
@@ -22,6 +22,9 @@ class LectureNote(Base):
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     text_extraction_status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    relevance_score: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    relevance_status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    relevance_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="lecture_notes")

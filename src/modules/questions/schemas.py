@@ -27,7 +27,10 @@ class QuestionRead(BaseModel):
     source_type: str
     difficulty_level: str | None
     mark_allocation: float
+    marking_scheme: str | None
     explanation: str | None
+    ai_topic_confidence: float | None = None
+    ai_topic_trace: dict | None = None
     created_at: datetime
     options: list[QuestionOptionRead] = []
 
@@ -53,6 +56,7 @@ class QuestionCreate(BaseModel):
     source_type: str
     difficulty_level: str | None = None
     mark_allocation: float = 1.0
+    marking_scheme: str | None = None
     solution_text: str | None = None
     explanation: str | None = None
     is_active: bool = True
@@ -72,6 +76,7 @@ class QuestionUpdate(BaseModel):
     source_type: str | None = None
     difficulty_level: str | None = None
     mark_allocation: float | None = None
+    marking_scheme: str | None = None
     solution_text: str | None = None
     explanation: str | None = None
     is_active: bool | None = None

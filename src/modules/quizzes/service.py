@@ -1,19 +1,47 @@
 import random
 from datetime import timedelta
+from io import BytesIO
 
 from fastapi import HTTPException, status
+from pypdf import PdfReader
 
 from src.common.enums import QuizStatus
 from src.common.utils import generate_slug, now_utc
 from src.core.config import settings
+from src.modules.lecture_notes.storage import FileStorageProvider, build_storage_provider
 from src.modules.quizzes.models import Quiz, QuizAttempt, QuizQuestion, QuizQuestionOption, QuizResponse
 from src.modules.quizzes.repository import QuizRepository
 from src.modules.quizzes.schemas import QuizCreate, QuizSubmitInput
 
 
 class QuizService:
-    def __init__(self, repository: QuizRepository):
+    def __init__(self, repository: QuizRepository, storage_provider: FileStorageProvider | None = None):
         self.repository = repository
+        self.storage_provider = storage_provider or build_storage_provider()
+
+    def _extract_theory_answer_text(self, content: bytes, extension: str) -> tuple[str | None, str]:
+        try:
+            if extension in {"txt", "md"}:
+                return content.decode("utf-8", errors="ignore"), "completed"
+
+            if extension == "pdf":
+                reader = PdfReader(BytesIO(content))
+                text = "\n".join(page.extract_text() or "" for page in reader.pages)
+                return text, "completed"
+
+            if extension in {"png", "jpg", "jpeg"}:
+                try:
+                    import pytesseract
+                    from PIL import Image
+                except Exception:
+                    return None, "failed"
+                image = Image.open(BytesIO(content))
+                text = pytesseract.image_to_string(image)
+                return text, "completed" if text else "failed"
+
+            return None, "failed"
+        except Exception:
+            return None, "failed"
 
     def create_quiz(self, payload: QuizCreate, user_id: int) -> Quiz:
         selected_questions = self.repository.select_questions(
@@ -170,6 +198,8 @@ class QuizService:
             if existing:
                 existing.selected_quiz_question_option_id = response_item.selected_quiz_question_option_id
                 existing.answer_text = response_item.answer_text
+                if response_item.answer_text is not None:
+                    existing.answer_input_mode = "typed"
                 self.repository.commit()
             else:
                 response = QuizResponse(
@@ -178,6 +208,7 @@ class QuizService:
                     user_id=user_id,
                     selected_quiz_question_option_id=response_item.selected_quiz_question_option_id,
                     answer_text=response_item.answer_text,
+                    answer_input_mode="typed",
                 )
                 self.repository.upsert_response(response)
 
@@ -243,6 +274,66 @@ class QuizService:
         if attempt is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
         return self.get_attempt_questions(attempt.quiz_id, attempt_id, user_id)
+
+    def upload_theory_answer(
+        self,
+        *,
+        attempt_id: int,
+        user_id: int,
+        quiz_question_id: int,
+        original_filename: str,
+        content: bytes,
+    ) -> QuizResponse:
+        attempt = self.repository.get_attempt_by_id(attempt_id, user_id)
+        if attempt is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+        if attempt.status != QuizStatus.IN_PROGRESS.value:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Attempt is not in progress")
+
+        quiz = self.repository.get_user_quiz(attempt.quiz_id, user_id)
+        if quiz is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
+
+        question = next((item for item in quiz.quiz_questions if item.id == quiz_question_id), None)
+        if question is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz question not found")
+        if question.question_type == "objective":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Objective questions do not accept theory uploads")
+
+        extension = original_filename.split(".")[-1].lower() if "." in original_filename else ""
+        if extension not in {"pdf", "png", "jpg", "jpeg", "txt", "md"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported theory answer file type")
+        if len(content) > settings.MAX_UPLOAD_FILE_SIZE_MB * 1024 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File too large. Max allowed is {settings.MAX_UPLOAD_FILE_SIZE_MB}MB",
+            )
+
+        stored = self.storage_provider.save(original_name=original_filename, content=content)
+        extracted_text, extraction_status = self._extract_theory_answer_text(content, extension)
+
+        response = self.repository.find_response(
+            attempt_id=attempt_id,
+            quiz_question_id=quiz_question_id,
+            user_id=user_id,
+        )
+        if response is None:
+            response = QuizResponse(
+                attempt_id=attempt_id,
+                quiz_question_id=quiz_question_id,
+                user_id=user_id,
+            )
+        response.answer_input_mode = "upload"
+        response.answer_text = extracted_text or response.answer_text
+        response.answer_file_provider = stored.provider
+        response.answer_file_bucket = stored.bucket
+        response.answer_file_key = stored.key
+        response.answer_file_path = stored.path
+        response.answer_file_type = extension
+        response.answer_file_size = len(content)
+        response.answer_extracted_text = extracted_text
+        response.answer_extraction_status = extraction_status
+        return self.repository.upsert_response(response)
 
     def create_and_start_practice_from_assessment(
         self,

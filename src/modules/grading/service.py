@@ -4,6 +4,7 @@ from src.common.enums import GradedBy, QuizStatus
 from src.common.utils import now_utc
 from src.modules.analytics.models import AttemptTopicMetric, TopicPerformance
 from src.modules.analytics.repository import AnalyticsRepository
+from src.modules.grading.ai_grader import TheoryAIGrader
 from src.modules.grading.repository import GradingRepository
 from src.modules.quizzes.models import QuizResult
 from src.modules.quizzes.repository import QuizRepository
@@ -19,6 +20,7 @@ class GradingService:
         self.grading_repository = grading_repository
         self.quiz_repository = quiz_repository
         self.analytics_repository = analytics_repository
+        self.theory_grader = TheoryAIGrader()
 
     def _weakness_level(self, accuracy: float) -> str:
         if accuracy >= 70:
@@ -87,16 +89,25 @@ class GradingService:
                 else:
                     feedback = "Incorrect answer."
             else:
-                model_solution = (quiz_question.question.solution_text or "").strip().lower() if quiz_question.question else ""
-                student_answer = (response.answer_text or "").strip().lower()
-                if model_solution and student_answer and model_solution in student_answer:
-                    is_correct = True
-                    awarded = float(quiz_question.marks)
-                    feedback = "Answer matches expected solution."
-                else:
-                    awarded = float(quiz_question.marks) * 0.5 if student_answer else 0.0
-                    feedback = "Partially graded by AI policy."
+                question_text = quiz_question.question.question_text if quiz_question.question else quiz_question.question_snapshot_text
+                marking_scheme = quiz_question.question.marking_scheme if quiz_question.question else ""
+                model_solution = quiz_question.question.solution_text if quiz_question.question else ""
+                student_answer = (response.answer_extracted_text or response.answer_text or "").strip()
+                ai_grade = self.theory_grader.grade_theory_answer(
+                    question_text=question_text,
+                    marking_scheme=marking_scheme or "",
+                    model_solution=model_solution or "",
+                    student_answer=student_answer,
+                    marks=float(quiz_question.marks),
+                )
+                awarded = round(float(quiz_question.marks) * ai_grade.score_ratio, 2)
+                is_correct = ai_grade.score_ratio >= 0.7
+                feedback = ai_grade.feedback
                 graded_by = GradedBy.AI.value
+                response.grading_strengths = ai_grade.strengths
+                response.grading_missing_points = ai_grade.missing_points
+                response.grading_confidence = ai_grade.confidence
+                response.grading_explanation = ai_grade.explanation
 
             response.is_correct = is_correct
             response.score_awarded = awarded

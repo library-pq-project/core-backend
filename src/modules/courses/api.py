@@ -1,17 +1,21 @@
 from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import File, Form, UploadFile
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
 from src.modules.auth.api import require_admin
+from src.modules.auth.models import User
+from src.modules.auth.api import get_current_user
 from src.modules.courses.repository import CourseRepository
-from src.modules.courses.schemas import CourseCreate, CourseRead, CourseUpdate
+from src.modules.courses.schemas import CourseCompactRead, CourseCreate, CourseRead, CourseUpdate
 from src.modules.courses.service import CourseService
+from src.modules.lecture_notes.storage import build_storage_provider
 
 router = APIRouter()
 
 
 def get_course_service(db: Session = Depends(get_db)) -> CourseService:
-    return CourseService(CourseRepository(db))
+    return CourseService(CourseRepository(db), build_storage_provider())
 
 
 @router.get("", response_model=list[CourseRead])
@@ -60,3 +64,40 @@ async def delete_course(
 ):
     service.delete_course(course_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{course_id}/compacts", response_model=CourseCompactRead, status_code=status.HTTP_201_CREATED)
+async def upload_course_compact(
+    course_id: int,
+    title: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_admin),
+    service: CourseService = Depends(get_course_service),
+):
+    return service.upload_course_compact(
+        course_id=course_id,
+        title=title,
+        upload_file=file,
+        admin_user_id=current_user.id,
+    )
+
+
+@router.get("/{course_id}/compacts", response_model=list[CourseCompactRead])
+async def list_course_compacts(
+    course_id: int,
+    active_only: bool = Query(default=False),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    _: User = Depends(get_current_user),
+    service: CourseService = Depends(get_course_service),
+):
+    return service.list_course_compacts(course_id, active_only=active_only, skip=skip, limit=limit)
+
+
+@router.get("/{course_id}/compact-active", response_model=CourseCompactRead)
+async def get_active_course_compact(
+    course_id: int,
+    _: User = Depends(get_current_user),
+    service: CourseService = Depends(get_course_service),
+):
+    return service.get_active_compact(course_id)

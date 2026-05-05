@@ -105,9 +105,18 @@ class QuizReviewItem(BaseModel):
     selected_option_text: str | None
     correct_option_id: int | None
     correct_option_text: str | None
+    marking_scheme: str | None
+    model_solution: str | None
+    student_submission_mode: str | None
     answer_text: str | None
+    answer_extracted_text: str | None
+    answer_file_key: str | None
     feedback: str | None
     explanation: str | None
+    grading_strengths: str | None
+    grading_missing_points: str | None
+    grading_confidence: float | None
+    grading_explanation: str | None
     is_correct: bool | None
     score_awarded: float | None
 
@@ -130,6 +139,13 @@ class QuizAttemptQuestionRead(BaseModel):
     options: list[QuizQuestionOptionRead]
     selected_quiz_question_option_id: int | None
     answer_text: str | None
+
+
+class TheoryAnswerUploadResponse(BaseModel):
+    attempt_id: int
+    quiz_question_id: int
+    answer_extraction_status: str
+    extracted_text_preview: str | None
 
 
 class AttemptTopicAnalysisRead(BaseModel):

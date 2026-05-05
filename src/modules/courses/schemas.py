@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -9,6 +11,7 @@ class CourseRead(BaseModel):
     description: str | None
     level: str | None
     semester: str | None
+    active_compact_version: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -27,3 +30,18 @@ class CourseUpdate(BaseModel):
     description: str | None = None
     level: str | None = None
     semester: str | None = None
+
+
+class CourseCompactRead(BaseModel):
+    id: int
+    course_id: int
+    version: int
+    slug: str
+    title: str
+    file_type: str
+    file_size: int
+    text_extraction_status: str
+    is_active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

@@ -139,7 +139,10 @@ async def get_questions_in_assessment(
                 "source_type": question.source_type,
                 "difficulty_level": question.difficulty_level,
                 "mark_allocation": float(question.mark_allocation),
+                "marking_scheme": question.marking_scheme if allow_correct else None,
                 "explanation": question.explanation if allow_correct else None,
+                "ai_topic_confidence": float(question.ai_topic_confidence) if question.ai_topic_confidence is not None else None,
+                "ai_topic_trace": question.ai_topic_trace,
                 "created_at": question.created_at,
                 "options": [
                     {

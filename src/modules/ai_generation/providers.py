@@ -20,14 +20,24 @@ class GeneratedQuestionPayload:
     explanation: str
 
 
+@dataclass
+class AIUsageTelemetry:
+    model_name: str
+    estimated_input_tokens: int
+    estimated_output_tokens: int
+
+
 class AIQuestionGenerator(Protocol):
     def generate_questions(
         self,
         *,
         context_text: str,
         question_type: str,
+        exam_type: str,
+        difficulty_level: str,
+        user_prompt: str,
         requested_count: int,
-    ) -> list[GeneratedQuestionPayload]:
+    ) -> tuple[list[GeneratedQuestionPayload], AIUsageTelemetry]:
         ...
 
 
@@ -40,8 +50,14 @@ class GeminiQuestionGenerator:
         self.timeout = settings.GEMINI_TIMEOUT_SECONDS
         self.max_retries = settings.GEMINI_MAX_RETRIES
 
-    def _fallback(self, question_type: str, requested_count: int, context_text: str) -> list[GeneratedQuestionPayload]:
-        return [
+    def _fallback(
+        self,
+        *,
+        question_type: str,
+        requested_count: int,
+        context_text: str,
+    ) -> tuple[list[GeneratedQuestionPayload], AIUsageTelemetry]:
+        output = [
             GeneratedQuestionPayload(
                 question_text=f"[{question_type.upper()}] Generated question {idx}: {context_text[:120]}",
                 options=["Option A", "Option B", "Option C", "Option D"],
@@ -51,24 +67,34 @@ class GeminiQuestionGenerator:
             )
             for idx in range(1, requested_count + 1)
         ]
+        telemetry = AIUsageTelemetry(
+            model_name=self.model,
+            estimated_input_tokens=max(1, len(context_text) // 4),
+            estimated_output_tokens=max(1, requested_count * 120),
+        )
+        return output, telemetry
 
     def generate_questions(
         self,
         *,
         context_text: str,
         question_type: str,
+        exam_type: str,
+        difficulty_level: str,
+        user_prompt: str,
         requested_count: int,
-    ) -> list[GeneratedQuestionPayload]:
+    ) -> tuple[list[GeneratedQuestionPayload], AIUsageTelemetry]:
         if not self.api_key:
-            return self._fallback(question_type, requested_count, context_text)
+            return self._fallback(question_type=question_type, requested_count=requested_count, context_text=context_text)
         if httpx is None:
-            return self._fallback(question_type, requested_count, context_text)
+            return self._fallback(question_type=question_type, requested_count=requested_count, context_text=context_text)
 
         prompt = (
             "You are generating university exam preparation questions. "
             "Return strict JSON array only. Each item must include fields: "
             "question_text, options (exactly 4), correct_index (0-3), solution_text, explanation. "
-            f"question_type={question_type}, requested_count={requested_count}. "
+            f"question_type={question_type}, exam_type={exam_type}, difficulty={difficulty_level}, requested_count={requested_count}. "
+            f"user_prompt={user_prompt}. "
             f"context={context_text[:4000]}"
         )
 
@@ -106,10 +132,15 @@ class GeminiQuestionGenerator:
                         )
                     )
                 if output:
-                    return output
+                    telemetry = AIUsageTelemetry(
+                        model_name=self.model,
+                        estimated_input_tokens=max(1, len(prompt) // 4),
+                        estimated_output_tokens=max(1, len(text) // 4),
+                    )
+                    return output, telemetry
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
 
         if last_error:
-            return self._fallback(question_type, requested_count, context_text)
-        return self._fallback(question_type, requested_count, context_text)
+            return self._fallback(question_type=question_type, requested_count=requested_count, context_text=context_text)
+        return self._fallback(question_type=question_type, requested_count=requested_count, context_text=context_text)

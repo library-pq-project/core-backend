@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from src.common.enums import QuizStatus
@@ -6,7 +6,12 @@ from src.db.session import get_db
 from src.modules.auth.api import get_current_user
 from src.modules.auth.models import User
 from src.modules.quizzes.repository import QuizRepository
-from src.modules.quizzes.schemas import AttemptResultRead, QuizAttemptQuestionRead, QuizReviewResponse
+from src.modules.quizzes.schemas import (
+    AttemptResultRead,
+    QuizAttemptQuestionRead,
+    QuizReviewResponse,
+    TheoryAnswerUploadResponse,
+)
 from src.modules.quizzes.service import QuizService
 
 router = APIRouter()
@@ -54,6 +59,8 @@ async def get_attempt_review(
     attempt = repository.get_attempt_by_id(attempt_id, current_user.id)
     if attempt is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+    if attempt.status == QuizStatus.IN_PROGRESS.value:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review is available only after submission")
 
     quiz = repository.get_user_quiz(attempt.quiz_id, current_user.id)
     if quiz is None:
@@ -90,9 +97,18 @@ async def get_attempt_review(
                 "selected_option_text": selected_option.option_text_snapshot if selected_option else None,
                 "correct_option_id": correct_option.id if correct_option else None,
                 "correct_option_text": correct_option.option_text_snapshot if correct_option else None,
+                "marking_scheme": quiz_question.question.marking_scheme if quiz_question.question else None,
+                "model_solution": quiz_question.question.solution_text if quiz_question.question and allow_correct_visibility else None,
+                "student_submission_mode": response.answer_input_mode if response else None,
                 "answer_text": response.answer_text if response else None,
+                "answer_extracted_text": response.answer_extracted_text if response else None,
+                "answer_file_key": response.answer_file_key if response else None,
                 "feedback": response.feedback if response else None,
                 "explanation": quiz_question.question.explanation if quiz_question.question and allow_correct_visibility else None,
+                "grading_strengths": response.grading_strengths if response else None,
+                "grading_missing_points": response.grading_missing_points if response else None,
+                "grading_confidence": float(response.grading_confidence) if response and response.grading_confidence is not None else None,
+                "grading_explanation": response.grading_explanation if response else None,
                 "is_correct": response.is_correct if response else None,
                 "score_awarded": float(response.score_awarded) if response and response.score_awarded is not None else None,
             }
@@ -146,4 +162,28 @@ async def get_attempt_result(
         "wrong_count": result.wrong_count,
         "unanswered_count": result.unanswered_count,
         "topic_analysis": topic_analysis,
+    }
+
+
+@router.post("/{attempt_id}/theory-answers/upload", response_model=TheoryAnswerUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_theory_answer(
+    attempt_id: int,
+    quiz_question_id: int = Form(...),
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    service: QuizService = Depends(get_quiz_service),
+):
+    content = await file.read()
+    response = service.upload_theory_answer(
+        attempt_id=attempt_id,
+        user_id=current_user.id,
+        quiz_question_id=quiz_question_id,
+        original_filename=file.filename or "theory-answer.txt",
+        content=content,
+    )
+    return {
+        "attempt_id": attempt_id,
+        "quiz_question_id": quiz_question_id,
+        "answer_extraction_status": response.answer_extraction_status,
+        "extracted_text_preview": (response.answer_extracted_text or "")[:400] or None,
     }

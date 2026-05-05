@@ -1,7 +1,9 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.modules.courses.models import Course, CourseCompact
 from src.modules.lecture_notes.models import LectureNote
+from src.modules.topics.models import Topic
 
 
 class LectureNoteRepository:
@@ -28,3 +30,21 @@ class LectureNoteRepository:
     def delete(self, lecture_note: LectureNote) -> None:
         self.db.delete(lecture_note)
         self.db.commit()
+
+    def get_course_relevance_context(self, course_id: int) -> dict:
+        course = self.db.get(Course, course_id)
+        if course is None:
+            return {"course": None, "topics": [], "compact": None}
+
+        topics = list(
+            self.db.scalars(
+                select(Topic).where(Topic.course_id == course_id).order_by(Topic.name.asc())
+            )
+        )
+        compact = self.db.scalar(
+            select(CourseCompact)
+            .where(CourseCompact.course_id == course_id, CourseCompact.is_active.is_(True))
+            .order_by(CourseCompact.version.desc())
+            .limit(1)
+        )
+        return {"course": course, "topics": topics, "compact": compact}

@@ -16,6 +16,9 @@ class LectureNoteRead(BaseModel):
     file_type: str
     file_size: int
     text_extraction_status: str
+    relevance_score: float | None
+    relevance_status: str
+    relevance_reason: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

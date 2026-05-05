@@ -3,6 +3,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     Numeric,
     String,
     Text,
@@ -34,9 +35,12 @@ class Question(Base):
     source_type: Mapped[str] = mapped_column(String(30), nullable=False)
     difficulty_level: Mapped[str | None] = mapped_column(String(30), nullable=True)
     mark_allocation: Mapped[float] = mapped_column(Numeric(8, 2), nullable=False, default=1)
+    marking_scheme: Mapped[str | None] = mapped_column(Text, nullable=True)
     solution_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     generation_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    ai_topic_confidence: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
+    ai_topic_trace: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(

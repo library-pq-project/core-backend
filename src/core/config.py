@@ -23,10 +23,13 @@ class Settings(BaseSettings):
     S3_BUCKET_NAME: str = ""
     S3_ACCESS_KEY_ID: str = ""
     S3_SECRET_ACCESS_KEY: str = ""
+    MAX_UPLOAD_FILE_SIZE_MB: int = 15
+    LECTURE_NOTE_RELEVANCE_THRESHOLD: float = 0.08
+    LECTURE_NOTE_RELEVANCE_MODE: str = "warn"
     MAX_ATTEMPT_DURATION_MINUTES: int = 180
     AI_PROVIDER: str = "gemini"
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"
     GEMINI_TIMEOUT_SECONDS: int = 30
     GEMINI_MAX_RETRIES: int = 2
 
