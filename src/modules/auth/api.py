@@ -23,7 +23,11 @@ def get_current_user(
     db: Session = Depends(get_db), token: str | None = Depends(oauth2_scheme)
 ) -> User:
     if settings.PROTOTYPE_MODE:
-        return ensure_prototype_user_with_prerequisites(db, user_id=settings.PROTOTYPE_USER_ID)
+        return ensure_prototype_user_with_prerequisites(
+            db,
+            user_id=settings.PROTOTYPE_USER_ID,
+            role=settings.PROTOTYPE_USER_ROLE,
+        )
 
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
@@ -37,6 +41,8 @@ def get_current_user(
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if settings.PROTOTYPE_MODE:
+        return current_user
     if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return current_user

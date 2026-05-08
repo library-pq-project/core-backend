@@ -24,7 +24,11 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup_warning() -> None:
         if settings.PROTOTYPE_MODE:
-            logger.warning("!!! PROTOTYPE MODE ENABLED !!! Auth is bypassed using PROTOTYPE_USER_ID=%s", settings.PROTOTYPE_USER_ID)
+            logger.warning(
+                "WARNING: AUTHORIZATION BYPASSED - PROTOTYPE MODE ENABLED (user_id=%s role=%s)",
+                settings.PROTOTYPE_USER_ID,
+                settings.PROTOTYPE_USER_ROLE,
+            )
 
     return app
 

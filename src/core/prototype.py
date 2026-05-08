@@ -11,7 +11,7 @@ from src.modules.courses.models import Course
 from src.modules.topics.models import Topic
 
 
-def ensure_prototype_user_with_prerequisites(db: Session, *, user_id: int) -> User:
+def ensure_prototype_user_with_prerequisites(db: Session, *, user_id: int, role: str = "admin") -> User:
     program = db.scalar(select(Program).where(Program.code == "PROTO-CSE"))
     if program is None:
         program = Program(
@@ -52,7 +52,7 @@ def ensure_prototype_user_with_prerequisites(db: Session, *, user_id: int) -> Us
             last_name="User",
             email=f"prototype{user_id}@local.dev",
             password_hash=hash_password("prototype123"),
-            role="student",
+            role=role,
             program_id=program.id,
             current_level="400",
             profile_update_required=False,
@@ -60,6 +60,7 @@ def ensure_prototype_user_with_prerequisites(db: Session, *, user_id: int) -> Us
         )
         db.add(user)
     else:
+        user.role = role
         user.program_id = user.program_id or program.id
         user.current_level = user.current_level or "400"
         user.is_active = True

@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     PROTOTYPE_MODE: bool = False
     PROTOTYPE_USER_ID: int = 1
+    PROTOTYPE_USER_ROLE: str = "admin"
 
     DATABASE_URL: str = Field(
         default="postgresql+psycopg2://postgres:postgres@localhost:5432/exam_prep"
