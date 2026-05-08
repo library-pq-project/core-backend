@@ -35,6 +35,8 @@ class AssessmentService:
         academic_session_id: int | None,
         semester_id: int | None,
         assessment_type: str | None,
+        source_type: str | None,
+        created_by_user_id: int | None,
         skip: int,
         limit: int,
     ) -> list[dict]:
@@ -43,6 +45,8 @@ class AssessmentService:
             academic_session_id=academic_session_id,
             semester_id=semester_id,
             assessment_type=assessment_type,
+            source_type=source_type,
+            created_by_user_id=created_by_user_id,
             skip=skip,
             limit=limit,
         )
@@ -63,6 +67,8 @@ class AssessmentService:
                     "year_label": assessment.year_label,
                     "assessment_type": assessment.assessment_type,
                     "question_format": assessment.question_format,
+                    "source_type": assessment.source_type,
+                    "created_by_user_id": assessment.created_by_user_id,
                     "default_duration_minutes": assessment.default_duration_minutes,
                     "total_available_questions": int(total_questions),
                 }
@@ -115,6 +121,8 @@ class AssessmentService:
                 "year_label": assessment.year_label,
                 "assessment_type": assessment.assessment_type,
                 "question_format": assessment.question_format,
+                "source_type": assessment.source_type,
+                "created_by_user_id": assessment.created_by_user_id,
                 "default_duration_minutes": assessment.default_duration_minutes,
                 "total_available_questions": total_questions,
             },

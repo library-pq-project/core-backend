@@ -96,6 +96,11 @@ class Assessment(Base):
     question_format: Mapped[str] = mapped_column(String(40), nullable=False)
     default_duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60, server_default="60")
     year_label: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    source_type: Mapped[str] = mapped_column(String(30), nullable=False, default="actual", server_default="actual")
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     slug: Mapped[str] = mapped_column(String(180), nullable=False, unique=True, index=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

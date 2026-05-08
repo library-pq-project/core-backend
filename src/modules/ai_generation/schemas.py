@@ -8,9 +8,7 @@ from src.modules.questions.schemas import QuestionRead
 class AIQuestionGenerationCreate(BaseModel):
     quiz_title: str
     user_prompt: str
-    assessment_id: int | None = None
     course_id: int
-    topic_id: int | None = None
     topic_ids: list[int] | None = None
     lecture_note_id: int | None = None
     question_type: str

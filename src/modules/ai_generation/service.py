@@ -1,11 +1,14 @@
 import re
+from datetime import datetime
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 
 from src.common.enums import GenerationStatus, QuestionSourceType
-from src.common.utils import make_fingerprint
+from src.common.utils import generate_slug, make_fingerprint
 from src.core.config import settings
-from src.core.prototype import ensure_prototype_assessment, ensure_prototype_course, ensure_prototype_topic
+from src.core.prototype import ensure_prototype_course, ensure_prototype_topic
+from src.modules.academic.models import AcademicCalendarState, Assessment
 from src.modules.ai_generation.providers import AIQuestionGenerator
 from src.modules.ai_generation.models import AIQuestionGenerationRequest
 from src.modules.ai_generation.repository import AIQuestionGenerationRepository
@@ -35,9 +38,7 @@ class AIQuestionGenerationService:
     def _build_fingerprint(self, payload: AIQuestionGenerationCreate, user_id: int) -> str:
         parts = [
             str(user_id),
-            str(payload.assessment_id or "none"),
             str(payload.course_id),
-            str(payload.topic_id or "none"),
             str(payload.lecture_note_id or "none"),
             payload.question_type,
             payload.exam_type,
@@ -57,12 +58,11 @@ class AIQuestionGenerationService:
         *,
         course_id: int,
         question_text: str,
-        fallback_topic_id: int | None,
+        allowed_topic_ids: set[int] | None,
     ) -> tuple[int | None, float | None, dict | None]:
-        if fallback_topic_id is not None:
-            return fallback_topic_id, 1.0, {"strategy": "request_topic_id"}
-
         topics = self.topic_repository.list(course_id=course_id, skip=0, limit=500)
+        if allowed_topic_ids:
+            topics = [topic for topic in topics if topic.id in allowed_topic_ids]
         if not topics:
             created = self.topic_repository.create(
                 Topic(
@@ -110,6 +110,53 @@ class AIQuestionGenerationService:
         )
         return created.id, best_score, {"strategy": "created_new_topic", "topic_slug": topic_slug}
 
+    def _create_generated_assessment(
+        self,
+        *,
+        user_id: int,
+        course_id: int,
+        quiz_title: str,
+        exam_type: str,
+    ) -> Assessment:
+        active_calendar = self.repository.db.scalar(
+            select(AcademicCalendarState).order_by(AcademicCalendarState.id.asc())
+        )
+        if active_calendar is None:
+            if settings.PROTOTYPE_MODE:
+                from src.core.prototype import ensure_prototype_user_with_prerequisites
+
+                ensure_prototype_user_with_prerequisites(
+                    self.repository.db,
+                    user_id=settings.PROTOTYPE_USER_ID,
+                    role=settings.PROTOTYPE_USER_ROLE,
+                )
+                active_calendar = self.repository.db.scalar(
+                    select(AcademicCalendarState).order_by(AcademicCalendarState.id.asc())
+                )
+        if active_calendar is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Active academic calendar is required to generate assessment-linked AI questions.",
+            )
+
+        now_tag = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        slug = generate_slug(f"ai-{quiz_title}-{user_id}-{now_tag}")
+        assessment = Assessment(
+            course_id=course_id,
+            academic_session_id=active_calendar.academic_session_id,
+            semester_id=active_calendar.semester_id,
+            assessment_type="AI Practice Set",
+            question_format=exam_type,
+            default_duration_minutes=60,
+            year_label=str(now_tag[:4]),
+            source_type=QuestionSourceType.AI_GENERATED.value,
+            created_by_user_id=user_id,
+            slug=slug,
+        )
+        self.repository.db.add(assessment)
+        self.repository.db.flush()
+        return assessment
+
     def _get_context_text(self, payload: AIQuestionGenerationCreate, user_id: int) -> str:
         course = self.course_repository.get(payload.course_id)
         if course is None and settings.PROTOTYPE_MODE:
@@ -136,10 +183,6 @@ class AIQuestionGenerationService:
                 for topic in (self.topic_repository.get(topic_id) for topic_id in payload.topic_ids)
                 if topic and topic.course_id == payload.course_id
             ]
-        elif payload.topic_id:
-            topic = self.topic_repository.get(payload.topic_id)
-            if topic and topic.course_id == payload.course_id:
-                selected_topics = [topic]
 
         if selected_topics:
             context_blocks.append(
@@ -176,22 +219,22 @@ class AIQuestionGenerationService:
     def generate_or_reuse(self, payload: AIQuestionGenerationCreate, user_id: int):
         if settings.PROTOTYPE_MODE:
             ensure_prototype_course(self.repository.db, course_id=payload.course_id)
-            ensure_prototype_topic(self.repository.db, course_id=payload.course_id, topic_id=payload.topic_id)
             for topic_id in payload.topic_ids or []:
                 ensure_prototype_topic(self.repository.db, course_id=payload.course_id, topic_id=topic_id)
-            ensure_prototype_assessment(
-                self.repository.db,
-                assessment_id=payload.assessment_id,
-                course_id=payload.course_id,
-                question_format=payload.question_type,
-            )
+
+        generated_assessment = self._create_generated_assessment(
+            user_id=user_id,
+            course_id=payload.course_id,
+            quiz_title=payload.quiz_title,
+            exam_type=payload.exam_type,
+        )
 
         fingerprint = self._build_fingerprint(payload, user_id)
         request = AIQuestionGenerationRequest(
             user_id=user_id,
-            assessment_id=payload.assessment_id,
+            assessment_id=generated_assessment.id,
             course_id=payload.course_id,
-            topic_id=payload.topic_id,
+            topic_id=(payload.topic_ids[0] if payload.topic_ids else None),
             lecture_note_id=payload.lecture_note_id,
             question_type=payload.question_type,
             quiz_title=payload.quiz_title,
@@ -237,13 +280,14 @@ class AIQuestionGenerationService:
 
             created_questions: list[Question] = []
             for generated in generated_payloads:
+                allowed_topic_ids = set(payload.topic_ids or []) or None
                 chosen_topic_id, confidence, trace = self._pick_or_create_topic(
                     course_id=payload.course_id,
                     question_text=generated.question_text,
-                    fallback_topic_id=payload.topic_id,
+                    allowed_topic_ids=allowed_topic_ids,
                 )
                 question = Question(
-                    assessment_id=payload.assessment_id,
+                    assessment_id=generated_assessment.id,
                     course_id=payload.course_id,
                     topic_id=chosen_topic_id,
                     lecture_note_id=payload.lecture_note_id,

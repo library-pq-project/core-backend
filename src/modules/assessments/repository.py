@@ -25,6 +25,8 @@ class AssessmentRepository:
         academic_session_id: int | None,
         semester_id: int | None,
         assessment_type: str | None,
+        source_type: str | None,
+        created_by_user_id: int | None,
         skip: int,
         limit: int,
     ) -> list[Assessment]:
@@ -37,6 +39,10 @@ class AssessmentRepository:
             stmt = stmt.where(Assessment.semester_id == semester_id)
         if assessment_type is not None:
             stmt = stmt.where(Assessment.assessment_type == assessment_type)
+        if source_type is not None:
+            stmt = stmt.where(Assessment.source_type == source_type)
+        if created_by_user_id is not None:
+            stmt = stmt.where(Assessment.created_by_user_id == created_by_user_id)
         stmt = stmt.order_by(Assessment.created_at.desc()).offset(skip).limit(limit)
         return list(self.db.scalars(stmt))
 
@@ -73,6 +79,8 @@ class AssessmentRepository:
         academic_session_id: int | None,
         semester_id: int | None,
         assessment_type: str | None,
+        source_type: str | None,
+        created_by_user_id: int | None,
         skip: int,
         limit: int,
     ) -> list[tuple[Assessment, int]]:
@@ -89,6 +97,10 @@ class AssessmentRepository:
             stmt = stmt.where(Assessment.semester_id == semester_id)
         if assessment_type is not None:
             stmt = stmt.where(Assessment.assessment_type == assessment_type)
+        if source_type is not None:
+            stmt = stmt.where(Assessment.source_type == source_type)
+        if created_by_user_id is not None:
+            stmt = stmt.where(Assessment.created_by_user_id == created_by_user_id)
         stmt = stmt.order_by(Assessment.created_at.desc()).offset(skip).limit(limit)
         return list(self.db.execute(stmt).all())
 

@@ -45,16 +45,21 @@ async def list_assessments(
     academic_session_id: int | None = Query(default=None),
     semester_id: int | None = Query(default=None),
     assessment_type: str | None = Query(default=None),
+    source_type: str | None = Query(default=None),
+    mine_only: bool = Query(default=False),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     service: AssessmentService = Depends(get_assessment_service),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    owner_filter = current_user.id if mine_only else None
     return service.list_assessments(
         course_id=course_id,
         academic_session_id=academic_session_id,
         semester_id=semester_id,
         assessment_type=assessment_type,
+        source_type=source_type,
+        created_by_user_id=owner_filter,
         skip=skip,
         limit=limit,
     )

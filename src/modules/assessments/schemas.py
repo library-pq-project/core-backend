@@ -21,6 +21,8 @@ class AssessmentRead(BaseModel):
     question_format: str
     default_duration_minutes: int
     year_label: str | None
+    source_type: str
+    created_by_user_id: int | None
     slug: str
 
     model_config = {"from_attributes": True}
@@ -36,6 +38,8 @@ class AssessmentListItem(BaseModel):
     year_label: str | None
     assessment_type: str
     question_format: str
+    source_type: str
+    created_by_user_id: int | None
     default_duration_minutes: int
     total_available_questions: int
 

@@ -65,7 +65,7 @@ When prototype mode is on:
   "quiz_title": "CSC411 Midsem Practice",
   "user_prompt": "Focus on search algorithms and heuristics with exam-style phrasing.",
   "course_id": 1,
-  "topic_id": 1,
+  "topic_ids": [1],
   "lecture_note_id": null,
   "question_type": "objective",
   "exam_type": "objective",
@@ -77,6 +77,10 @@ When prototype mode is on:
 Then fetch persisted questions:
 - `GET /api/questions?course_id=1&source_type=ai_generated`
 - or assessment-scoped retrieval endpoints if assessment was used.
+
+Generated AI questions now auto-create an AI assessment owned by the current user.
+To list your own generated assessments:
+- `GET /api/assessments?mine_only=true&source_type=ai_generated`
 
 ## Admin Swagger Login
 
