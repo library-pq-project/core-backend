@@ -35,6 +35,49 @@ uvicorn src.main:app --reload
 
 API docs: `http://127.0.0.1:8000/api/docs`
 
+## Prototype Mode (Dev only)
+
+Use this mode to unblock AI generation without JWT/program/session setup friction.
+
+Set in `.env`:
+
+```bash
+APP_ENV=development
+PROTOTYPE_MODE=true
+PROTOTYPE_USER_ID=1
+GEMINI_API_KEY=<your_key>
+```
+
+Safety rule:
+- `PROTOTYPE_MODE=true` is blocked when `APP_ENV=production|prod`.
+
+When prototype mode is on:
+- auth resolves a bootstraped local user automatically,
+- program/session/semester/active-calendar prerequisites are auto-created,
+- missing course/topic/assessment refs in AI requests are auto-created.
+
+### Minimal AI E2E call
+
+`POST /api/ai/question-generation`
+
+```json
+{
+  "quiz_title": "CSC411 Midsem Practice",
+  "user_prompt": "Focus on search algorithms and heuristics with exam-style phrasing.",
+  "course_id": 1,
+  "topic_id": 1,
+  "lecture_note_id": null,
+  "question_type": "objective",
+  "exam_type": "objective",
+  "difficulty_level": "mixed",
+  "requested_count": 5
+}
+```
+
+Then fetch persisted questions:
+- `GET /api/questions?course_id=1&source_type=ai_generated`
+- or assessment-scoped retrieval endpoints if assessment was used.
+
 ## Admin Swagger Login
 
 1. Use seeded admin credentials:

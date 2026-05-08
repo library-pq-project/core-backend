@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
+from src.core.config import settings
+from src.core.prototype import ensure_prototype_user_with_prerequisites
 from src.core.security import decode_access_token
 from src.db.session import get_db
 from src.modules.auth.models import User
@@ -10,7 +12,7 @@ from src.modules.auth.schemas import TokenResponse, UserLogin, UserProfileUpdate
 from src.modules.auth.service import AuthService
 
 router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token", auto_error=False)
 
 
 def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
@@ -18,8 +20,13 @@ def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
 
 
 def get_current_user(
-    db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)
+    db: Session = Depends(get_db), token: str | None = Depends(oauth2_scheme)
 ) -> User:
+    if settings.PROTOTYPE_MODE:
+        return ensure_prototype_user_with_prerequisites(db, user_id=settings.PROTOTYPE_USER_ID)
+
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     subject = decode_access_token(token)
     if subject is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
@@ -43,6 +50,15 @@ async def register(payload: UserRegister, service: AuthService = Depends(get_aut
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: UserLogin, service: AuthService = Depends(get_auth_service)):
     token = service.login(payload)
+    return TokenResponse(access_token=token)
+
+
+@router.post("/token", response_model=TokenResponse)
+async def token_login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    service: AuthService = Depends(get_auth_service),
+):
+    token = service.login(UserLogin(email=form_data.username, password=form_data.password))
     return TokenResponse(access_token=token)
 
 

@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "AI Exam Prep Backend"
     APP_VERSION: str = "0.1.0"
     API_PREFIX: str = "/api"
+    APP_ENV: str = "development"
+    PROTOTYPE_MODE: bool = False
+    PROTOTYPE_USER_ID: int = 1
 
     DATABASE_URL: str = Field(
         default="postgresql+psycopg2://postgres:postgres@localhost:5432/exam_prep"

@@ -4,6 +4,8 @@ from fastapi import HTTPException, status
 
 from src.common.enums import GenerationStatus, QuestionSourceType
 from src.common.utils import make_fingerprint
+from src.core.config import settings
+from src.core.prototype import ensure_prototype_assessment, ensure_prototype_course, ensure_prototype_topic
 from src.modules.ai_generation.providers import AIQuestionGenerator
 from src.modules.ai_generation.models import AIQuestionGenerationRequest
 from src.modules.ai_generation.repository import AIQuestionGenerationRepository
@@ -110,6 +112,8 @@ class AIQuestionGenerationService:
 
     def _get_context_text(self, payload: AIQuestionGenerationCreate, user_id: int) -> str:
         course = self.course_repository.get(payload.course_id)
+        if course is None and settings.PROTOTYPE_MODE:
+            course = ensure_prototype_course(self.repository.db, course_id=payload.course_id)
         if course is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
 
@@ -150,14 +154,19 @@ class AIQuestionGenerationService:
         if payload.lecture_note_id is not None:
             note = self.lecture_note_repository.get_for_user(payload.lecture_note_id, user_id)
             if note is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture note not found")
-            if note.course_id != payload.course_id:
+                if settings.PROTOTYPE_MODE:
+                    context_blocks.append("Lecture note not found in prototype mode; continuing with course context only.")
+                    note = None
+                else:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture note not found")
+            if note is not None and note.course_id != payload.course_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="lecture_note_id does not belong to selected course_id",
                 )
-            context_blocks.append(f"Lecture note title: {note.title}")
-            context_blocks.append(f"Lecture note excerpt: {(note.extracted_text or '')[:6000]}")
+            if note is not None:
+                context_blocks.append(f"Lecture note title: {note.title}")
+                context_blocks.append(f"Lecture note excerpt: {(note.extracted_text or '')[:6000]}")
 
         context_blocks.append(f"User prompt: {payload.user_prompt}")
         context_blocks.append(f"Target exam type: {payload.exam_type}")
@@ -165,6 +174,18 @@ class AIQuestionGenerationService:
         return "\n".join(context_blocks)
 
     def generate_or_reuse(self, payload: AIQuestionGenerationCreate, user_id: int):
+        if settings.PROTOTYPE_MODE:
+            ensure_prototype_course(self.repository.db, course_id=payload.course_id)
+            ensure_prototype_topic(self.repository.db, course_id=payload.course_id, topic_id=payload.topic_id)
+            for topic_id in payload.topic_ids or []:
+                ensure_prototype_topic(self.repository.db, course_id=payload.course_id, topic_id=topic_id)
+            ensure_prototype_assessment(
+                self.repository.db,
+                assessment_id=payload.assessment_id,
+                course_id=payload.course_id,
+                question_format=payload.question_type,
+            )
+
         fingerprint = self._build_fingerprint(payload, user_id)
         request = AIQuestionGenerationRequest(
             user_id=user_id,
