@@ -2,6 +2,7 @@ from sqlalchemy import delete
 
 from src.common.utils import generate_slug
 from src.core.security import hash_password
+from src.db import models as _models  # noqa: F401  # Ensure all ORM models are registered
 from src.db.session import SessionLocal
 from src.modules.academic.models import (
     AcademicCalendarState,

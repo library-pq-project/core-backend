@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
-from src.modules.academic.assessment_api import router as assessment_router
 from src.modules.academic.api import router as academic_router
+from src.modules.assessments.api import router as assessments_router
 from src.modules.ai_generation.api import router as ai_generation_router
 from src.modules.analytics.api import router as analytics_router
 from src.modules.auth.api import router as auth_router
@@ -15,7 +15,7 @@ from src.modules.topics.api import router as topics_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["Auth"])
-api_router.include_router(assessment_router, prefix="/assessments", tags=["Assessments"])
+api_router.include_router(assessments_router, prefix="/assessments", tags=["Assessments"])
 api_router.include_router(academic_router, prefix="/academic", tags=["Academic"])
 api_router.include_router(courses_router, prefix="/courses", tags=["Courses"])
 api_router.include_router(topics_router, prefix="/topics", tags=["Topics"])
