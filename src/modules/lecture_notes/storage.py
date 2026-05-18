@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import mimetypes
 import uuid
 from dataclasses import dataclass
 from typing import Protocol
@@ -44,12 +45,59 @@ class LocalFileStorageProvider:
 
 
 class S3CompatibleFileStorageProvider:
+    def __init__(self):
+        self.bucket = settings.S3_BUCKET_NAME
+        self.endpoint_url = settings.S3_ENDPOINT_URL or None
+        self.region = settings.S3_REGION
+        self.prefix = settings.S3_KEY_PREFIX.strip("/")
+        self.access_key = settings.S3_ACCESS_KEY_ID
+        self.secret_key = settings.S3_SECRET_ACCESS_KEY
+        if not self.bucket:
+            raise RuntimeError("S3_BUCKET_NAME is required when FILE_STORAGE_PROVIDER=s3")
+        if not self.access_key or not self.secret_key:
+            raise RuntimeError("S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are required for S3 storage")
+        self._client = self._build_client()
+
+    def _build_client(self):
+        try:
+            import boto3
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError("boto3 is required for FILE_STORAGE_PROVIDER=s3. Install dependencies.") from exc
+        return boto3.client(
+            "s3",
+            endpoint_url=self.endpoint_url,
+            aws_access_key_id=self.access_key,
+            aws_secret_access_key=self.secret_key,
+            region_name=self.region,
+        )
+
+    def _build_key(self, original_name: str) -> str:
+        extension = original_name.split(".")[-1].lower() if "." in original_name else "bin"
+        filename = f"{uuid.uuid4().hex}.{extension}"
+        if self.prefix:
+            return f"{self.prefix}/{filename}"
+        return filename
+
     def save(self, *, original_name: str, content: bytes) -> StoredFileInfo:
-        # Extension point for production object storage integration.
-        raise NotImplementedError("S3-compatible storage provider is not configured in this MVP")
+        key = self._build_key(original_name)
+        content_type, _ = mimetypes.guess_type(original_name)
+        put_kwargs = {
+            "Bucket": self.bucket,
+            "Key": key,
+            "Body": content,
+        }
+        if content_type:
+            put_kwargs["ContentType"] = content_type
+        self._client.put_object(**put_kwargs)
+        return StoredFileInfo(
+            provider="s3",
+            bucket=self.bucket,
+            key=key,
+            path=f"s3://{self.bucket}/{key}",
+        )
 
     def delete(self, *, key: str, path: str | None = None) -> None:
-        raise NotImplementedError("S3-compatible storage provider is not configured in this MVP")
+        self._client.delete_object(Bucket=self.bucket, Key=key)
 
 
 def build_storage_provider() -> FileStorageProvider:

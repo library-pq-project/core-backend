@@ -65,3 +65,24 @@ class QuestionOption(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     question = relationship("Question", back_populates="options")
+
+
+class QuestionImportJob(Base):
+    __tablename__ = "question_import_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending")
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False, default="json")
+    file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    import_mode: Mapped[str] = mapped_column(String(30), nullable=False, default="mixed")
+    total_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    accepted_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    rejected_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    row_errors: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    created_question_ids: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
+    created_topic_ids: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

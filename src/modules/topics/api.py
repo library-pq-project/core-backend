@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
 from src.modules.auth.api import require_admin
 from src.modules.topics.repository import TopicRepository
-from src.modules.topics.schemas import TopicCreate, TopicRead, TopicUpdate
+from src.modules.topics.schemas import TopicBulkUpsertRequest, TopicBulkUpsertResult, TopicCreate, TopicRead, TopicUpdate
 from src.modules.topics.service import TopicService
 
 router = APIRouter()
@@ -51,6 +51,28 @@ async def create_topic(
     _=Depends(require_admin),
 ):
     return service.create_topic(payload)
+
+
+@router.post("/bulk-upsert", response_model=TopicBulkUpsertResult, status_code=status.HTTP_201_CREATED)
+async def bulk_upsert_topics(
+    payload: TopicBulkUpsertRequest,
+    service: TopicService = Depends(get_topic_service),
+    _=Depends(require_admin),
+):
+    return service.bulk_upsert_topics(payload)
+
+
+@router.post("/bulk-upload", response_model=TopicBulkUpsertResult, status_code=status.HTTP_201_CREATED)
+async def bulk_upload_topics(
+    file: UploadFile = File(...),
+    service: TopicService = Depends(get_topic_service),
+    _=Depends(require_admin),
+):
+    content = await file.read()
+    return service.bulk_upsert_topics_from_file(
+        file_name=file.filename or "topics.csv",
+        content=content,
+    )
 
 
 @router.put("/{topic_id}", response_model=TopicRead)

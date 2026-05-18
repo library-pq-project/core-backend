@@ -60,6 +60,9 @@ class CourseRepository:
         stmt = select(CourseCompact).where(CourseCompact.slug == slug)
         return self.db.scalar(stmt)
 
+    def get_compact(self, compact_id: int) -> CourseCompact | None:
+        return self.db.get(CourseCompact, compact_id)
+
     def create_compact(self, compact: CourseCompact) -> CourseCompact:
         self.db.add(compact)
         self.db.commit()

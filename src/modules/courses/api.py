@@ -101,3 +101,13 @@ async def get_active_course_compact(
     service: CourseService = Depends(get_course_service),
 ):
     return service.get_active_compact(course_id)
+
+
+@router.post("/{course_id}/compacts/{compact_id}/activate", response_model=CourseCompactRead)
+async def activate_course_compact(
+    course_id: int,
+    compact_id: int,
+    _: User = Depends(require_admin),
+    service: CourseService = Depends(get_course_service),
+):
+    return service.activate_compact(course_id, compact_id)

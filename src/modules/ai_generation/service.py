@@ -1,4 +1,3 @@
-import re
 from datetime import datetime
 
 from fastapi import HTTPException, status
@@ -16,7 +15,7 @@ from src.modules.ai_generation.schemas import AIQuestionGenerationCreate
 from src.modules.courses.repository import CourseRepository
 from src.modules.lecture_notes.repository import LectureNoteRepository
 from src.modules.questions.models import Question, QuestionOption
-from src.modules.topics.models import Topic
+from src.modules.topics.categorization import TopicCategorizationService
 from src.modules.topics.repository import TopicRepository
 
 
@@ -34,6 +33,7 @@ class AIQuestionGenerationService:
         self.course_repository = course_repository
         self.topic_repository = topic_repository
         self.ai_client = ai_client
+        self.topic_categorizer = TopicCategorizationService(topic_repository)
 
     def _build_fingerprint(self, payload: AIQuestionGenerationCreate, user_id: int) -> str:
         normalized_topic_ids = self._normalize_topic_ids(payload.topic_ids)
@@ -55,66 +55,6 @@ class AIQuestionGenerationService:
             return None
         cleaned = sorted({topic_id for topic_id in topic_ids if topic_id and topic_id > 0})
         return cleaned or None
-
-    def _tokenize(self, text: str) -> set[str]:
-        return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) >= 3}
-
-    def _pick_or_create_topic(
-        self,
-        *,
-        course_id: int,
-        question_text: str,
-        allowed_topic_ids: set[int] | None,
-    ) -> tuple[int | None, float | None, dict | None]:
-        topics = self.topic_repository.list(course_id=course_id, skip=0, limit=500)
-        if allowed_topic_ids:
-            topics = [topic for topic in topics if topic.id in allowed_topic_ids]
-        if not topics:
-            created = self.topic_repository.create(
-                Topic(
-                    course_id=course_id,
-                    name="AI Generated Topic",
-                    slug=f"ai-generated-topic-{course_id}",
-                    description="Auto-created topic for AI-generated questions",
-                )
-            )
-            return created.id, 0.25, {"strategy": "created_first_topic"}
-
-        question_tokens = self._tokenize(question_text)
-        best_topic = None
-        best_score = 0.0
-        for topic in topics:
-            topic_tokens = self._tokenize(topic.name)
-            if topic.description:
-                topic_tokens.update(self._tokenize(topic.description))
-            if not topic_tokens:
-                continue
-            overlap = len(question_tokens.intersection(topic_tokens))
-            score = overlap / max(len(topic_tokens), 1)
-            if score > best_score:
-                best_score = score
-                best_topic = topic
-
-        if best_topic is not None and best_score >= 0.35:
-            return best_topic.id, best_score, {"strategy": "matched_existing_topic", "topic_slug": best_topic.slug}
-
-        topic_title = " ".join(question_text.split()[:6]).strip() or "AI Generated Topic"
-        topic_slug = re.sub(r"[^a-z0-9]+", "-", topic_title.lower()).strip("-") or "ai-generated-topic"
-        existing_slug = self.topic_repository.get_by_slug(topic_slug)
-        if existing_slug and existing_slug.course_id == course_id:
-            return existing_slug.id, best_score, {"strategy": "reused_slug_topic", "topic_slug": topic_slug}
-        if existing_slug and existing_slug.course_id != course_id:
-            topic_slug = f"{topic_slug}-{course_id}"
-
-        created = self.topic_repository.create(
-            Topic(
-                course_id=course_id,
-                name=topic_title.title(),
-                slug=topic_slug,
-                description="Auto-created from AI generation pipeline",
-            )
-        )
-        return created.id, best_score, {"strategy": "created_new_topic", "topic_slug": topic_slug}
 
     def _create_generated_assessment(
         self,
@@ -182,7 +122,7 @@ class AIQuestionGenerationService:
             context_blocks.append(f"Compact taxonomy: {compact.taxonomy_text or ''}")
             context_blocks.append(f"Common pitfalls: {compact.pitfalls_text or ''}")
 
-        selected_topics: list[Topic] = []
+        selected_topics = []
         normalized_topic_ids = self._normalize_topic_ids(payload.topic_ids)
         if normalized_topic_ids:
             selected_topics = [
@@ -288,7 +228,7 @@ class AIQuestionGenerationService:
             created_questions: list[Question] = []
             for generated in generated_payloads:
                 allowed_topic_ids = set(normalized_topic_ids or []) or None
-                chosen_topic_id, confidence, trace = self._pick_or_create_topic(
+                chosen_topic_id, confidence, trace = self.topic_categorizer.classify_question_topic(
                     course_id=payload.course_id,
                     question_text=generated.question_text,
                     allowed_topic_ids=allowed_topic_ids,

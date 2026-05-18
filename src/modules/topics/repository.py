@@ -24,6 +24,16 @@ class TopicRepository:
     def get_by_slug(self, slug: str) -> Topic | None:
         return self.db.scalar(select(Topic).where(Topic.slug == slug))
 
+    def get_by_course_and_slug(self, *, course_id: int, slug: str) -> Topic | None:
+        return self.db.scalar(
+            select(Topic).where(Topic.course_id == course_id, Topic.slug == slug)
+        )
+
+    def get_by_course_and_name(self, *, course_id: int, name: str) -> Topic | None:
+        return self.db.scalar(
+            select(Topic).where(Topic.course_id == course_id, Topic.name == name)
+        )
+
     def list_by_course_slug(self, course_slug: str, *, skip: int, limit: int) -> list[Topic]:
         stmt = (
             select(Topic)

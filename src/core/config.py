@@ -27,9 +27,15 @@ class Settings(BaseSettings):
     S3_BUCKET_NAME: str = ""
     S3_ACCESS_KEY_ID: str = ""
     S3_SECRET_ACCESS_KEY: str = ""
+    S3_REGION: str = "us-east-1"
+    S3_KEY_PREFIX: str = ""
     MAX_UPLOAD_FILE_SIZE_MB: int = 15
     LECTURE_NOTE_RELEVANCE_THRESHOLD: float = 0.08
     LECTURE_NOTE_RELEVANCE_MODE: str = "warn"
+    TOPIC_CLASSIFICATION_CONFIDENCE_THRESHOLD: float = 0.35
+    AUTO_CREATE_TOPIC_IF_LOW_CONFIDENCE: bool = False
+    UNCATEGORIZED_TOPIC_NAME: str = "Uncategorized"
+    BULK_IMPORT_MAX_ROWS: int = 2000
     MAX_ATTEMPT_DURATION_MINUTES: int = 180
     AI_PROVIDER: str = "gemini"
     AI_ALLOW_STUB_FALLBACK: bool = False

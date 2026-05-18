@@ -1,7 +1,7 @@
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, selectinload
 
-from src.modules.questions.models import Question
+from src.modules.questions.models import Question, QuestionImportJob
 
 
 class QuestionRepository:
@@ -48,6 +48,13 @@ class QuestionRepository:
         self.db.refresh(question)
         return question
 
+    def create_many(self, questions: list[Question]) -> list[Question]:
+        self.db.add_all(questions)
+        self.db.commit()
+        for question in questions:
+            self.db.refresh(question)
+        return questions
+
     def save(self, question: Question) -> Question:
         self.db.add(question)
         self.db.commit()
@@ -57,3 +64,28 @@ class QuestionRepository:
     def delete(self, question: Question) -> None:
         self.db.delete(question)
         self.db.commit()
+
+    def create_import_job(self, job: QuestionImportJob) -> QuestionImportJob:
+        self.db.add(job)
+        self.db.commit()
+        self.db.refresh(job)
+        return job
+
+    def save_import_job(self, job: QuestionImportJob) -> QuestionImportJob:
+        self.db.add(job)
+        self.db.commit()
+        self.db.refresh(job)
+        return job
+
+    def get_import_job(self, job_id: int) -> QuestionImportJob | None:
+        return self.db.get(QuestionImportJob, job_id)
+
+    def list_import_jobs(self, *, user_id: int, skip: int, limit: int) -> list[QuestionImportJob]:
+        stmt = (
+            select(QuestionImportJob)
+            .where(QuestionImportJob.created_by_user_id == user_id)
+            .order_by(QuestionImportJob.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt))

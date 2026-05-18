@@ -164,3 +164,12 @@ class CourseService:
         if compact is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active compact not found")
         return compact
+
+    def activate_compact(self, course_id: int, compact_id: int) -> CourseCompact:
+        self.get_course(course_id)
+        compact = self.repository.get_compact(compact_id)
+        if compact is None or compact.course_id != course_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Compact not found")
+        self.repository.deactivate_compacts(course_id)
+        compact.is_active = True
+        return self.repository.save(compact)
