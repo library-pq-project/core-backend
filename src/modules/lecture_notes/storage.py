@@ -47,9 +47,16 @@ class LocalFileStorageProvider:
 class S3CompatibleFileStorageProvider:
     def __init__(self):
         self.bucket = settings.S3_BUCKET_NAME
-        self.endpoint_url = settings.S3_ENDPOINT_URL or None
-        self.region = settings.S3_REGION
+        endpoint_from_env = (settings.S3_ENDPOINT_URL or "").strip()
+        if not endpoint_from_env and settings.R2_ACCOUNT_ID:
+            endpoint_from_env = f"https://{settings.R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+        if endpoint_from_env and "://" not in endpoint_from_env:
+            endpoint_from_env = f"https://{endpoint_from_env}"
+        self.endpoint_url = endpoint_from_env or None
+        self.is_r2 = bool(self.endpoint_url and "r2.cloudflarestorage.com" in self.endpoint_url)
+        self.region = "auto" if self.is_r2 else settings.S3_REGION
         self.prefix = settings.S3_KEY_PREFIX.strip("/")
+        self.addressing_style = settings.S3_ADDRESSING_STYLE.strip().lower() or "auto"
         self.access_key = settings.S3_ACCESS_KEY_ID
         self.secret_key = settings.S3_SECRET_ACCESS_KEY
         if not self.bucket:
@@ -61,14 +68,22 @@ class S3CompatibleFileStorageProvider:
     def _build_client(self):
         try:
             import boto3
+            from botocore.config import Config
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError("boto3 is required for FILE_STORAGE_PROVIDER=s3. Install dependencies.") from exc
+        effective_addressing_style = self.addressing_style
+        if self.is_r2 and effective_addressing_style == "auto":
+            effective_addressing_style = "path"
         return boto3.client(
             "s3",
             endpoint_url=self.endpoint_url,
             aws_access_key_id=self.access_key,
             aws_secret_access_key=self.secret_key,
             region_name=self.region,
+            config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": effective_addressing_style},
+            ),
         )
 
     def _build_key(self, original_name: str) -> str:

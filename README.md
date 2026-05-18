@@ -176,11 +176,25 @@ Active compact text is injected into AI generation context.
 
 When using `s3`, configure:
 - `S3_ENDPOINT_URL` (optional for S3-compatible services)
+- `R2_ACCOUNT_ID` (optional helper for Cloudflare R2; endpoint is auto-derived if `S3_ENDPOINT_URL` is empty)
 - `S3_BUCKET_NAME`
 - `S3_ACCESS_KEY_ID`
 - `S3_SECRET_ACCESS_KEY`
-- `S3_REGION`
+- `S3_REGION` (`auto` recommended for R2)
+- `S3_ADDRESSING_STYLE` (`path` recommended for R2; default auto)
 - `S3_KEY_PREFIX` (optional)
+
+### Cloudflare R2 quick env
+
+```bash
+FILE_STORAGE_PROVIDER=s3
+R2_ACCOUNT_ID=<your_account_id>
+S3_BUCKET_NAME=<your_bucket_name>
+S3_ACCESS_KEY_ID=<r2_access_key_id>
+S3_SECRET_ACCESS_KEY=<r2_secret_access_key>
+S3_REGION=auto
+S3_ADDRESSING_STYLE=path
+```
 
 ## Admin Swagger Login
 

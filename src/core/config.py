@@ -24,10 +24,12 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     FILE_STORAGE_PROVIDER: str = "local"
     S3_ENDPOINT_URL: str = ""
+    R2_ACCOUNT_ID: str = ""
     S3_BUCKET_NAME: str = ""
     S3_ACCESS_KEY_ID: str = ""
     S3_SECRET_ACCESS_KEY: str = ""
     S3_REGION: str = "us-east-1"
+    S3_ADDRESSING_STYLE: str = "auto"
     S3_KEY_PREFIX: str = ""
     MAX_UPLOAD_FILE_SIZE_MB: int = 15
     LECTURE_NOTE_RELEVANCE_THRESHOLD: float = 0.08
