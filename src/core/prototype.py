@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from src.common.utils import generate_slug
@@ -11,7 +11,20 @@ from src.modules.courses.models import Course
 from src.modules.topics.models import Topic
 
 
+def _sync_pk_sequence(db: Session, table_name: str) -> None:
+    if db.bind is None or db.bind.dialect.name != "postgresql":
+        return
+    # table_name is only used internally with trusted constant values in this module.
+    db.execute(
+        text(
+            f"SELECT setval(pg_get_serial_sequence('{table_name}', 'id'), "
+            f"COALESCE((SELECT MAX(id) FROM {table_name}), 1), true)"
+        )
+    )
+
+
 def ensure_prototype_user_with_prerequisites(db: Session, *, user_id: int, role: str = "admin") -> User:
+    created_user = False
     program = db.scalar(select(Program).where(Program.code == "PROTO-CSE"))
     if program is None:
         program = Program(
@@ -59,6 +72,7 @@ def ensure_prototype_user_with_prerequisites(db: Session, *, user_id: int, role:
             is_active=True,
         )
         db.add(user)
+        created_user = True
     else:
         user.role = role
         user.program_id = user.program_id or program.id
@@ -66,6 +80,9 @@ def ensure_prototype_user_with_prerequisites(db: Session, *, user_id: int, role:
         user.is_active = True
         user.profile_update_required = False
 
+    db.flush()
+    if created_user:
+        _sync_pk_sequence(db, "users")
     db.commit()
     db.refresh(user)
     return user
@@ -87,6 +104,8 @@ def ensure_prototype_course(db: Session, *, course_id: int) -> Course:
         semester="First",
     )
     db.add(course)
+    db.flush()
+    _sync_pk_sequence(db, "courses")
     db.commit()
     db.refresh(course)
     return course
@@ -107,6 +126,8 @@ def ensure_prototype_topic(db: Session, *, course_id: int, topic_id: int | None)
         description="Auto-created topic for prototype mode",
     )
     db.add(topic)
+    db.flush()
+    _sync_pk_sequence(db, "topics")
     db.commit()
     db.refresh(topic)
     return topic
@@ -149,6 +170,8 @@ def ensure_prototype_assessment(
         slug=generate_slug(f"prototype-assessment-{assessment_id}-{course_id}"),
     )
     db.add(assessment)
+    db.flush()
+    _sync_pk_sequence(db, "assessments")
     db.commit()
     db.refresh(assessment)
     return assessment

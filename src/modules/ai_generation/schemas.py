@@ -11,8 +11,7 @@ class AIQuestionGenerationCreate(BaseModel):
     course_id: int
     topic_ids: list[int] | None = None
     lecture_note_id: int | None = None
-    question_type: str
-    exam_type: Literal["objective", "theory", "mixed"]
+    question_type: Literal["objective", "theory", "practical", "case_based", "mixed"] = "objective"
     difficulty_level: Literal["easy", "medium", "hard", "mixed"] = "mixed"
     requested_count: int = Field(ge=1, le=100)
 

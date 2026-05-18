@@ -32,8 +32,9 @@ class Settings(BaseSettings):
     LECTURE_NOTE_RELEVANCE_MODE: str = "warn"
     MAX_ATTEMPT_DURATION_MINUTES: int = 180
     AI_PROVIDER: str = "gemini"
+    AI_ALLOW_STUB_FALLBACK: bool = False
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"
+    GEMINI_MODEL: str = "gemini-2.5-flash-lite"
     GEMINI_TIMEOUT_SECONDS: int = 30
     GEMINI_MAX_RETRIES: int = 2
 

@@ -36,19 +36,25 @@ class AIQuestionGenerationService:
         self.ai_client = ai_client
 
     def _build_fingerprint(self, payload: AIQuestionGenerationCreate, user_id: int) -> str:
+        normalized_topic_ids = self._normalize_topic_ids(payload.topic_ids)
         parts = [
             str(user_id),
             str(payload.course_id),
             str(payload.lecture_note_id or "none"),
             payload.question_type,
-            payload.exam_type,
             payload.difficulty_level,
             payload.quiz_title,
             payload.user_prompt,
             str(payload.requested_count),
-            ",".join(str(item) for item in sorted(payload.topic_ids or [])),
+            ",".join(str(item) for item in (normalized_topic_ids or [])),
         ]
         return make_fingerprint(parts)
+
+    def _normalize_topic_ids(self, topic_ids: list[int] | None) -> list[int] | None:
+        if not topic_ids:
+            return None
+        cleaned = sorted({topic_id for topic_id in topic_ids if topic_id and topic_id > 0})
+        return cleaned or None
 
     def _tokenize(self, text: str) -> set[str]:
         return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) >= 3}
@@ -116,7 +122,7 @@ class AIQuestionGenerationService:
         user_id: int,
         course_id: int,
         quiz_title: str,
-        exam_type: str,
+        question_type: str,
     ) -> Assessment:
         active_calendar = self.repository.db.scalar(
             select(AcademicCalendarState).order_by(AcademicCalendarState.id.asc())
@@ -146,7 +152,7 @@ class AIQuestionGenerationService:
             academic_session_id=active_calendar.academic_session_id,
             semester_id=active_calendar.semester_id,
             assessment_type="AI Practice Set",
-            question_format=exam_type,
+            question_format=question_type,
             default_duration_minutes=60,
             year_label=str(now_tag[:4]),
             source_type=QuestionSourceType.AI_GENERATED.value,
@@ -177,10 +183,11 @@ class AIQuestionGenerationService:
             context_blocks.append(f"Common pitfalls: {compact.pitfalls_text or ''}")
 
         selected_topics: list[Topic] = []
-        if payload.topic_ids:
+        normalized_topic_ids = self._normalize_topic_ids(payload.topic_ids)
+        if normalized_topic_ids:
             selected_topics = [
                 topic
-                for topic in (self.topic_repository.get(topic_id) for topic_id in payload.topic_ids)
+                for topic in (self.topic_repository.get(topic_id) for topic_id in normalized_topic_ids)
                 if topic and topic.course_id == payload.course_id
             ]
 
@@ -212,21 +219,22 @@ class AIQuestionGenerationService:
                 context_blocks.append(f"Lecture note excerpt: {(note.extracted_text or '')[:6000]}")
 
         context_blocks.append(f"User prompt: {payload.user_prompt}")
-        context_blocks.append(f"Target exam type: {payload.exam_type}")
+        context_blocks.append(f"Target question type: {payload.question_type}")
         context_blocks.append(f"Target difficulty: {payload.difficulty_level}")
         return "\n".join(context_blocks)
 
     def generate_or_reuse(self, payload: AIQuestionGenerationCreate, user_id: int):
+        normalized_topic_ids = self._normalize_topic_ids(payload.topic_ids)
         if settings.PROTOTYPE_MODE:
             ensure_prototype_course(self.repository.db, course_id=payload.course_id)
-            for topic_id in payload.topic_ids or []:
+            for topic_id in normalized_topic_ids or []:
                 ensure_prototype_topic(self.repository.db, course_id=payload.course_id, topic_id=topic_id)
 
         generated_assessment = self._create_generated_assessment(
             user_id=user_id,
             course_id=payload.course_id,
             quiz_title=payload.quiz_title,
-            exam_type=payload.exam_type,
+            question_type=payload.question_type,
         )
 
         fingerprint = self._build_fingerprint(payload, user_id)
@@ -234,12 +242,12 @@ class AIQuestionGenerationService:
             user_id=user_id,
             assessment_id=generated_assessment.id,
             course_id=payload.course_id,
-            topic_id=(payload.topic_ids[0] if payload.topic_ids else None),
+            topic_id=(normalized_topic_ids[0] if normalized_topic_ids else None),
             lecture_note_id=payload.lecture_note_id,
             question_type=payload.question_type,
             quiz_title=payload.quiz_title,
             user_prompt=payload.user_prompt,
-            exam_type=payload.exam_type,
+            exam_type=payload.question_type,
             difficulty_level=payload.difficulty_level,
             requested_count=payload.requested_count,
             fingerprint=fingerprint,
@@ -269,7 +277,6 @@ class AIQuestionGenerationService:
             generated_payloads, telemetry = self.ai_client.generate_questions(
                 context_text=context_text,
                 question_type=payload.question_type,
-                exam_type=payload.exam_type,
                 difficulty_level=payload.difficulty_level,
                 user_prompt=payload.user_prompt,
                 requested_count=payload.requested_count - len(existing_questions),
@@ -280,7 +287,7 @@ class AIQuestionGenerationService:
 
             created_questions: list[Question] = []
             for generated in generated_payloads:
-                allowed_topic_ids = set(payload.topic_ids or []) or None
+                allowed_topic_ids = set(normalized_topic_ids or []) or None
                 chosen_topic_id, confidence, trace = self._pick_or_create_topic(
                     course_id=payload.course_id,
                     question_text=generated.question_text,

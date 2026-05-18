@@ -68,11 +68,14 @@ When prototype mode is on:
   "topic_ids": [1],
   "lecture_note_id": null,
   "question_type": "objective",
-  "exam_type": "objective",
   "difficulty_level": "mixed",
   "requested_count": 5
 }
 ```
+
+`topic_ids` behavior:
+- `null` or `[]` => use all topics in the course
+- `[id1, id2]` => use only those selected topics
 
 Then fetch persisted questions:
 - `GET /api/questions?course_id=1&source_type=ai_generated`
