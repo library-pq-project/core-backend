@@ -45,6 +45,7 @@ Set in `.env`:
 APP_ENV=development
 PROTOTYPE_MODE=true
 PROTOTYPE_USER_ID=1
+FILE_STORAGE_PROVIDER=local
 GEMINI_API_KEY=<your_key>
 ```
 
@@ -84,6 +85,102 @@ Then fetch persisted questions:
 Generated AI questions now auto-create an AI assessment owned by the current user.
 To list your own generated assessments:
 - `GET /api/assessments?mine_only=true&source_type=ai_generated`
+
+## Bulk Question Import
+
+Admin-only endpoints:
+- `POST /api/questions/bulk` (JSON payload)
+- `POST /api/questions/bulk-upload` (CSV/XLSX/JSON file)
+- `GET /api/questions/import-jobs`
+- `GET /api/questions/import-jobs/{job_id}`
+
+JSON bulk payload:
+
+```json
+{
+  "import_mode": "mixed",
+  "default_course_id": 1,
+  "default_assessment_id": 1,
+  "default_source_type": "actual",
+  "auto_categorize_topics": true,
+  "draft_theory_without_solution": false,
+  "rows": [
+    {
+      "question_type": "objective",
+      "question_text": "Which search is uninformed?",
+      "mark_allocation": 2,
+      "options": [
+        {"option_text": "A*", "position": 1, "is_correct": false},
+        {"option_text": "Breadth-first search", "position": 2, "is_correct": true}
+      ]
+    },
+    {
+      "question_type": "theory",
+      "question_text": "Explain admissibility in A*.",
+      "mark_allocation": 5,
+      "marking_scheme": "Define admissibility and justify optimality.",
+      "solution_text": "A heuristic is admissible if it never overestimates..."
+    }
+  ]
+}
+```
+
+CSV/XLSX supported columns:
+- `assessment_id`, `course_id`, `topic_id`, `topic_name`
+- `question_type`, `question_text`, `source_text`, `content_format`
+- `mark_allocation`, `marking_scheme`, `solution_text`, `explanation`
+- Objective options: `option_a`, `option_b`, `option_c`, `option_d`
+- Correct option: `correct_option_position` (1..n) or `correct_option_label` (`A`, `B`, ...)
+
+## Bulk Topic Upsert
+
+Admin-only endpoints:
+- `POST /api/topics/bulk-upsert` (JSON)
+- `POST /api/topics/bulk-upload` (CSV/XLSX/JSON)
+
+JSON payload:
+
+```json
+{
+  "rows": [
+    {"course_id": 1, "name": "Search Algorithms", "description": "Graph search methods"},
+    {"course_id": 1, "name": "Knowledge Representation", "description": "Logic and ontologies"}
+  ]
+}
+```
+
+## Topic Auto-categorization Policy
+
+Applied during AI generation and question bulk import:
+- score against existing course topics
+- if confidence >= `TOPIC_CLASSIFICATION_CONFIDENCE_THRESHOLD`, assign matched topic
+- else:
+  - if `AUTO_CREATE_TOPIC_IF_LOW_CONFIDENCE=true`, create topic
+  - otherwise assign/create `UNCATEGORIZED_TOPIC_NAME`
+
+## Course Compacts
+
+Admin endpoints:
+- `POST /api/courses/{course_id}/compacts` upload compact (`pdf/docx/txt/md/json`)
+- `POST /api/courses/{course_id}/compacts/{compact_id}/activate` set active compact
+- `GET /api/courses/{course_id}/compacts`
+- `GET /api/courses/{course_id}/compact-active`
+
+Active compact text is injected into AI generation context.
+
+## File Storage Provider
+
+`FILE_STORAGE_PROVIDER`:
+- `local` for development
+- `s3` for production
+
+When using `s3`, configure:
+- `S3_ENDPOINT_URL` (optional for S3-compatible services)
+- `S3_BUCKET_NAME`
+- `S3_ACCESS_KEY_ID`
+- `S3_SECRET_ACCESS_KEY`
+- `S3_REGION`
+- `S3_KEY_PREFIX` (optional)
 
 ## Admin Swagger Login
 
