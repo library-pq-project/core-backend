@@ -3,6 +3,7 @@ from datetime import timedelta
 from io import BytesIO
 
 from fastapi import HTTPException, status
+from docx import Document
 from pypdf import PdfReader
 
 from src.common.enums import QuizStatus
@@ -37,6 +38,11 @@ class QuizService:
                     return None, "failed"
                 image = Image.open(BytesIO(content))
                 text = pytesseract.image_to_string(image)
+                return text, "completed" if text else "failed"
+
+            if extension == "docx":
+                doc = Document(BytesIO(content))
+                text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
                 return text, "completed" if text else "failed"
 
             return None, "failed"
@@ -301,7 +307,7 @@ class QuizService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Objective questions do not accept theory uploads")
 
         extension = original_filename.split(".")[-1].lower() if "." in original_filename else ""
-        if extension not in {"pdf", "png", "jpg", "jpeg", "txt", "md"}:
+        if extension not in {"pdf", "png", "jpg", "jpeg", "txt", "md", "docx"}:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported theory answer file type")
         if len(content) > settings.MAX_UPLOAD_FILE_SIZE_MB * 1024 * 1024:
             raise HTTPException(
