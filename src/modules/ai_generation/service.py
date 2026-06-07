@@ -199,7 +199,7 @@ class AIQuestionGenerationService:
                 fingerprint, payload.requested_count
             )
             if len(existing_questions) >= payload.requested_count:
-                request.model_name = getattr(self.ai_client, "model", "gemini-3.1-flash-lite-preview")
+                request.model_name = getattr(self.ai_client, "model", "gemini-3.1-pro-preview")
                 request.estimated_input_tokens = 0
                 request.estimated_output_tokens = max(1, sum(len(item.question_text or "") for item in existing_questions) // 4)
                 self.repository.mark_request(request, GenerationStatus.COMPLETED)
