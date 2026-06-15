@@ -258,3 +258,37 @@ Notes:
 4. Click `Authorize` in Swagger and paste:
 `Bearer <access_token>`
 5. Run admin endpoints (for example `POST /api/academic/sessions`).
+
+## Assessment, Quiz, and Attempt Flow
+
+Use the APIs with this separation:
+
+- `assessments`
+  - browse past question sets
+  - start practice from an assessment with `POST /api/assessments/{assessment_id}/practice/start`
+- `quizzes`
+  - hold the generated question set and configuration
+  - `GET /api/quizzes/{quiz_id}/questions` returns the quiz's full question set snapshot
+  - start a fresh attempt with `POST /api/quizzes/{quiz_id}/attempts/start`
+- `quiz-attempts`
+  - handle the active student work
+  - `GET /api/quiz-attempts/{attempt_id}`
+  - `GET /api/quiz-attempts/{attempt_id}/questions`
+  - `POST /api/quiz-attempts/{attempt_id}/submit`
+  - `POST /api/quiz-attempts/{attempt_id}/grade`
+  - `GET /api/quiz-attempts/{attempt_id}/result`
+  - `GET /api/quiz-attempts/{attempt_id}/review`
+  - `POST /api/quiz-attempts/{attempt_id}/theory-answers/upload`
+
+Straight student flow:
+1. `POST /api/assessments/{assessment_id}/practice/start`
+2. read `attempt.id` from the response
+3. `GET /api/quiz-attempts/{attempt_id}/questions`
+4. `POST /api/quiz-attempts/{attempt_id}/submit`
+5. `POST /api/quiz-attempts/{attempt_id}/grade`
+6. `GET /api/quiz-attempts/{attempt_id}/result`
+7. `GET /api/quiz-attempts/{attempt_id}/review`
+
+Route meaning:
+- `GET /api/quizzes/{quiz_id}/questions`: the quiz's stored question set
+- `GET /api/quiz-attempts/{attempt_id}/questions`: the student's working view tied to one attempt

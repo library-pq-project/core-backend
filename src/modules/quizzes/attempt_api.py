@@ -3,13 +3,19 @@ from sqlalchemy.orm import Session
 
 from src.common.enums import QuizStatus
 from src.db.session import get_db
+from src.modules.analytics.repository import AnalyticsRepository
 from src.modules.auth.api import get_current_user
 from src.modules.auth.models import User
+from src.modules.grading.repository import GradingRepository
+from src.modules.grading.schemas import GradeQuizResponse
+from src.modules.grading.service import GradingService
 from src.modules.quizzes.repository import QuizRepository
 from src.modules.quizzes.schemas import (
     AttemptResultRead,
+    QuizAttemptRead,
     QuizAttemptQuestionRead,
     QuizReviewResponse,
+    QuizSubmitInput,
     TheoryAnswerUploadResponse,
 )
 from src.modules.quizzes.service import QuizService
@@ -19,6 +25,23 @@ router = APIRouter()
 
 def get_quiz_service(db: Session = Depends(get_db)) -> QuizService:
     return QuizService(QuizRepository(db))
+
+
+def get_grading_service(db: Session = Depends(get_db)) -> GradingService:
+    return GradingService(
+        grading_repository=GradingRepository(db),
+        quiz_repository=QuizRepository(db),
+        analytics_repository=AnalyticsRepository(db),
+    )
+
+
+@router.get("/{attempt_id}", response_model=QuizAttemptRead)
+async def get_attempt(
+    attempt_id: int,
+    current_user: User = Depends(get_current_user),
+    service: QuizService = Depends(get_quiz_service),
+):
+    return service.get_attempt_by_id(attempt_id, current_user.id)
 
 
 @router.get("/{attempt_id}/questions", response_model=list[QuizAttemptQuestionRead])
@@ -45,6 +68,39 @@ async def get_attempt_questions(
         }
         for question in questions
     ]
+
+
+@router.post("/{attempt_id}/submit", response_model=QuizAttemptRead)
+async def submit_attempt_by_attempt_id(
+    attempt_id: int,
+    payload: QuizSubmitInput,
+    current_user: User = Depends(get_current_user),
+    service: QuizService = Depends(get_quiz_service),
+):
+    return service.submit_attempt_by_id(
+        attempt_id=attempt_id,
+        user_id=current_user.id,
+        payload=payload,
+    )
+
+
+@router.post("/{attempt_id}/grade", response_model=GradeQuizResponse)
+async def grade_attempt_by_attempt_id(
+    attempt_id: int,
+    current_user: User = Depends(get_current_user),
+    quiz_service: QuizService = Depends(get_quiz_service),
+    grading_service: GradingService = Depends(get_grading_service),
+):
+    attempt = quiz_service.get_attempt_by_id(attempt_id, current_user.id)
+    result = grading_service.grade_quiz(attempt.quiz_id, current_user.id, attempt_id=attempt_id)
+    return GradeQuizResponse(
+        attempt_id=result.attempt_id,
+        quiz_id=result.quiz_id,
+        graded=True,
+        total_score=float(result.total_score),
+        max_score=float(result.max_score),
+        percentage_score=float(result.percentage_score),
+    )
 
 
 @router.get("/{attempt_id}/review", response_model=QuizReviewResponse)

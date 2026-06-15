@@ -131,6 +131,12 @@ class QuizService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
         return quiz
 
+    def get_attempt_by_id(self, attempt_id: int, user_id: int) -> QuizAttempt:
+        attempt = self.repository.get_attempt_by_id(attempt_id, user_id)
+        if attempt is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+        return attempt
+
     def _resolve_attempt_duration_minutes(
         self,
         *,
@@ -247,6 +253,17 @@ class QuizService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
         return self._submit_for_attempt(quiz, user_id, attempt, payload)
 
+    def submit_attempt_by_id(
+        self,
+        *,
+        attempt_id: int,
+        user_id: int,
+        payload: QuizSubmitInput,
+    ) -> QuizAttempt:
+        attempt = self.get_attempt_by_id(attempt_id, user_id)
+        quiz = self.get_quiz(attempt.quiz_id, user_id)
+        return self._submit_for_attempt(quiz, user_id, attempt, payload)
+
     def submit_quiz(self, quiz_id: int, user_id: int, payload: QuizSubmitInput) -> Quiz:
         quiz = self.get_quiz(quiz_id, user_id)
         attempt = self.repository.get_latest_attempt(quiz_id, user_id)
@@ -282,9 +299,7 @@ class QuizService:
         return quiz, attempt, responses
 
     def get_attempt_questions_by_attempt_id(self, attempt_id: int, user_id: int):
-        attempt = self.repository.get_attempt_by_id(attempt_id, user_id)
-        if attempt is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+        attempt = self.get_attempt_by_id(attempt_id, user_id)
         return self.get_attempt_questions(attempt.quiz_id, attempt_id, user_id)
 
     def upload_theory_answer(
