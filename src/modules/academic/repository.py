@@ -89,6 +89,9 @@ class AcademicRepository:
     def get_program(self, program_id: int) -> Program | None:
         return self.db.get(Program, program_id)
 
+    def get_course(self, course_id: int) -> Course | None:
+        return self.db.get(Course, course_id)
+
     def get_active_calendar(self) -> AcademicCalendarState | None:
         return self.db.scalar(select(AcademicCalendarState).order_by(AcademicCalendarState.id.asc()))
 

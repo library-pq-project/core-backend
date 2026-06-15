@@ -4,8 +4,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from src.modules.academic.models import Assessment
+from src.modules.courses.models import Course
 from src.modules.questions.models import Question
 from src.modules.topics.models import Topic
+from src.modules.academic.models import AcademicSession, Semester
 
 
 class AssessmentRepository:
@@ -48,6 +50,15 @@ class AssessmentRepository:
 
     def get(self, assessment_id: int) -> Assessment | None:
         return self.db.get(Assessment, assessment_id)
+
+    def get_course(self, course_id: int) -> Course | None:
+        return self.db.get(Course, course_id)
+
+    def get_session(self, session_id: int) -> AcademicSession | None:
+        return self.db.get(AcademicSession, session_id)
+
+    def get_semester(self, semester_id: int) -> Semester | None:
+        return self.db.get(Semester, semester_id)
 
     def list_questions(
         self,

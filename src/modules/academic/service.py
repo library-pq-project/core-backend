@@ -118,18 +118,29 @@ class AcademicService:
         )
 
     def create_assessment(self, payload: AssessmentCreate) -> Assessment:
+        course = self.repository.get_course(payload.course_id)
+        if course is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+        session = self.repository.get_session(payload.academic_session_id)
+        if session is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Academic session not found")
+        if payload.semester_id is not None:
+            semester = self.repository.get_semester(payload.semester_id)
+            if semester is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
+        year_label = payload.year_label or session.name
         slug = generate_slug(
-            f"{payload.course_id}-{payload.academic_session_id}-{payload.semester_id}-{payload.assessment_type}-{payload.question_format}-{payload.year_label or ''}"
+            f"{payload.course_id}-{payload.academic_session_id}-{payload.semester_id}-{payload.assessment_type}-{payload.question_format}-{year_label}"
         )
         return self.repository.create(
             Assessment(
-                course_id=payload.course_id,
+                course_id=course.id,
                 academic_session_id=payload.academic_session_id,
                 semester_id=payload.semester_id,
                 assessment_type=payload.assessment_type,
                 question_format=payload.question_format,
                 default_duration_minutes=payload.default_duration_minutes,
-                year_label=payload.year_label,
+                year_label=year_label,
                 slug=slug,
             )
         )

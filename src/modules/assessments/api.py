@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
+from typing import Literal
 
 from src.db.session import get_db
 from src.modules.assessments.repository import AssessmentRepository
@@ -45,7 +46,7 @@ async def list_assessments(
     academic_session_id: int | None = Query(default=None),
     semester_id: int | None = Query(default=None),
     assessment_type: str | None = Query(default=None),
-    source_type: str | None = Query(default=None),
+    source_type: Literal["actual", "ai_generated"] | None = Query(default=None),
     mine_only: bool = Query(default=False),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
@@ -112,7 +113,7 @@ async def get_questions_in_assessment(
     assessment_id: int,
     include_correct: bool = Query(default=False),
     question_type: str | None = Query(default=None),
-    source_type: str | None = Query(default=None),
+    source_type: Literal["actual", "ai_generated"] | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(get_current_user),

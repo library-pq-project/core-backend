@@ -44,16 +44,16 @@ class QuestionOptionWrite(BaseModel):
 
 
 class QuestionCreate(BaseModel):
-    assessment_id: int | None = None
-    course_id: int
+    assessment_id: int
+    course_id: int | None = None
     topic_id: int | None = None
     lecture_note_id: int | None = None
     year: int | None = None
     question_text: str | None = None
     source_text: str | None = None
     content_format: Literal["plain_text", "markdown_latex"] = "plain_text"
-    question_type: str
-    source_type: str
+    question_type: Literal["objective", "theory", "practical", "case_based"]
+    source_type: Literal["actual", "ai_generated"]
     difficulty_level: str | None = None
     mark_allocation: float = 1.0
     marking_scheme: str | None = None
@@ -72,8 +72,8 @@ class QuestionUpdate(BaseModel):
     question_text: str | None = None
     source_text: str | None = None
     content_format: Literal["plain_text", "markdown_latex"] | None = None
-    question_type: str | None = None
-    source_type: str | None = None
+    question_type: Literal["objective", "theory", "practical", "case_based"] | None = None
+    source_type: Literal["actual", "ai_generated"] | None = None
     difficulty_level: str | None = None
     mark_allocation: float | None = None
     marking_scheme: str | None = None

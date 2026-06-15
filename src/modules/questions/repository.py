@@ -3,6 +3,9 @@ from __future__ import annotations
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, selectinload
 
+from src.modules.academic.models import Assessment
+from src.modules.courses.models import Course
+from src.modules.lecture_notes.models import LectureNote
 from src.modules.questions.models import Question, QuestionImportJob
 
 
@@ -43,6 +46,15 @@ class QuestionRepository:
     def get(self, question_id: int) -> Question | None:
         stmt = select(Question).options(selectinload(Question.options)).where(Question.id == question_id)
         return self.db.scalar(stmt)
+
+    def get_assessment(self, assessment_id: int) -> Assessment | None:
+        return self.db.get(Assessment, assessment_id)
+
+    def get_course(self, course_id: int) -> Course | None:
+        return self.db.get(Course, course_id)
+
+    def get_lecture_note(self, lecture_note_id: int) -> LectureNote | None:
+        return self.db.get(LectureNote, lecture_note_id)
 
     def create(self, question: Question) -> Question:
         self.db.add(question)

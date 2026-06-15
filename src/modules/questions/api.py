@@ -31,7 +31,7 @@ async def list_questions(
     topic_id: int | None = Query(default=None),
     year: int | None = Query(default=None),
     question_type: str | None = Query(default=None),
-    source_type: str | None = Query(default=None),
+    source_type: Literal["actual", "ai_generated"] | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     service: QuestionService = Depends(get_question_service),

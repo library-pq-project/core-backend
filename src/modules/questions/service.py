@@ -63,15 +63,45 @@ class QuestionService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="assessment_id is required",
             )
+        assessment = self.repository.get_assessment(payload.assessment_id)
+        if assessment is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assessment not found",
+            )
+        derived_course_id = assessment.course_id
+        if payload.course_id is not None and payload.course_id != derived_course_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="course_id does not match the selected assessment. Omit course_id or use the assessment's course.",
+            )
         source_text = payload.source_text or payload.question_text
         if source_text is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Either source_text or question_text is required",
             )
+        if payload.topic_id is not None:
+            topic = self.topic_repository.get(payload.topic_id)
+            if topic is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+            if topic.course_id != derived_course_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Selected topic does not belong to the assessment's course",
+                )
+        if payload.lecture_note_id is not None:
+            lecture_note = self.repository.get_lecture_note(payload.lecture_note_id)
+            if lecture_note is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture note not found")
+            if lecture_note.course_id != derived_course_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Selected lecture note does not belong to the assessment's course",
+                )
         question = Question(
             assessment_id=payload.assessment_id,
-            course_id=payload.course_id,
+            course_id=derived_course_id,
             topic_id=payload.topic_id,
             lecture_note_id=payload.lecture_note_id,
             year=payload.year,
@@ -101,9 +131,29 @@ class QuestionService:
         question = self.get_question(question_id)
         updates = payload.model_dump(exclude_unset=True)
 
+        if "assessment_id" in updates:
+            assessment_id = updates["assessment_id"]
+            if assessment_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="assessment_id cannot be removed from an existing question",
+                )
+            assessment = self.repository.get_assessment(assessment_id)
+            if assessment is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found")
+            question.assessment_id = assessment.id
+            question.course_id = assessment.course_id
+            updates.pop("assessment_id", None)
+
+        if "course_id" in updates:
+            requested_course_id = updates.pop("course_id")
+            if requested_course_id is not None and requested_course_id != question.course_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="course_id is derived from assessment_id and cannot be changed directly",
+                )
+
         for field in [
-            "assessment_id",
-            "course_id",
             "topic_id",
             "lecture_note_id",
             "year",
@@ -121,6 +171,26 @@ class QuestionService:
         ]:
             if field in updates:
                 setattr(question, field, updates[field])
+
+        if "topic_id" in updates and question.topic_id is not None:
+            topic = self.topic_repository.get(question.topic_id)
+            if topic is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+            if topic.course_id != question.course_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Selected topic does not belong to the question's course",
+                )
+
+        if "lecture_note_id" in updates and question.lecture_note_id is not None:
+            lecture_note = self.repository.get_lecture_note(question.lecture_note_id)
+            if lecture_note is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture note not found")
+            if lecture_note.course_id != question.course_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Selected lecture note does not belong to the question's course",
+                )
 
         if "options" in updates and payload.options is not None:
             question.options = [
