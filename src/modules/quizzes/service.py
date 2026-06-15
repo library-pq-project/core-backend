@@ -257,20 +257,6 @@ class QuizService:
         self.repository.commit()
         return attempt
 
-    def submit_quiz_for_attempt(
-        self,
-        *,
-        quiz_id: int,
-        user_id: int,
-        attempt_id: int,
-        payload: QuizSubmitInput,
-    ) -> QuizAttempt:
-        quiz = self.get_quiz(quiz_id, user_id)
-        attempt = self.repository.get_attempt(quiz_id, attempt_id, user_id)
-        if not attempt:
-            raise not_found("attempt", attempt_id)
-        return self._submit_for_attempt(quiz, user_id, attempt, payload)
-
     def submit_attempt_by_id(
         self,
         *,
@@ -282,48 +268,14 @@ class QuizService:
         quiz = self.get_quiz(attempt.quiz_id, user_id)
         return self._submit_for_attempt(quiz, user_id, attempt, payload)
 
-    def submit_quiz(self, quiz_id: int, user_id: int, payload: QuizSubmitInput) -> Quiz:
-        quiz = self.get_quiz(quiz_id, user_id)
-        attempt = self.repository.get_latest_attempt(quiz_id, user_id)
-        if attempt is None:
-            attempt = self.start_attempt(quiz_id, user_id)
-        self._submit_for_attempt(quiz, user_id, attempt, payload)
-        return self.get_quiz(quiz_id, user_id)
-
-    def get_in_progress_questions(self, quiz_id: int, user_id: int):
-        quiz = self.get_quiz(quiz_id, user_id)
-        attempt = self.repository.get_latest_attempt(quiz_id, user_id)
-        if attempt is None or attempt.status != QuizStatus.IN_PROGRESS.value:
-            raise bad_request(
-                f"No in-progress attempt was found for quiz with id {quiz_id}",
-                error_code="NO_IN_PROGRESS_ATTEMPT",
-                resource="quiz",
-                resource_id=quiz_id,
-            )
-        return quiz, attempt
-
-    def get_in_progress_questions_with_responses(self, quiz_id: int, user_id: int):
-        quiz, attempt = self.get_in_progress_questions(quiz_id, user_id)
-        responses = {
-            response.quiz_question_id: response
-            for response in self.repository.list_responses_for_attempt(attempt.id, user_id)
-        }
-        return quiz, attempt, responses
-
-    def get_attempt_questions(self, quiz_id: int, attempt_id: int, user_id: int):
-        quiz = self.get_quiz(quiz_id, user_id)
-        attempt = self.repository.get_attempt(quiz_id, attempt_id, user_id)
-        if attempt is None:
-            raise not_found("attempt", attempt_id)
+    def get_attempt_questions_by_attempt_id(self, attempt_id: int, user_id: int):
+        attempt = self.get_attempt_by_id(attempt_id, user_id)
+        quiz = self.get_quiz(attempt.quiz_id, user_id)
         responses = {
             response.quiz_question_id: response
             for response in self.repository.list_responses_for_attempt(attempt_id, user_id)
         }
         return quiz, attempt, responses
-
-    def get_attempt_questions_by_attempt_id(self, attempt_id: int, user_id: int):
-        attempt = self.get_attempt_by_id(attempt_id, user_id)
-        return self.get_attempt_questions(attempt.quiz_id, attempt_id, user_id)
 
     def upload_theory_answer(
         self,

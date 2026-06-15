@@ -27,14 +27,6 @@ class QuizRepository:
         )
         return self.db.scalar(stmt)
 
-    def get_attempt(self, quiz_id: int, attempt_id: int, user_id: int) -> QuizAttempt | None:
-        stmt = select(QuizAttempt).where(
-            QuizAttempt.id == attempt_id,
-            QuizAttempt.quiz_id == quiz_id,
-            QuizAttempt.user_id == user_id,
-        )
-        return self.db.scalar(stmt)
-
     def get_attempt_by_id(self, attempt_id: int, user_id: int) -> QuizAttempt | None:
         stmt = select(QuizAttempt).where(QuizAttempt.id == attempt_id, QuizAttempt.user_id == user_id)
         return self.db.scalar(stmt)
