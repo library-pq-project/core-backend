@@ -233,7 +233,7 @@ Use this to create a practice quiz and immediately start an attempt from an asse
 Notes:
 
 - `selected_topic_ids = null` means all topics.
-- The response returns the created `quiz` and `attempt`.
+- The response returns `quiz_id` and the created `attempt`.
 
 ## AI Question Generation
 
@@ -276,31 +276,13 @@ Notes:
 
 ## Quiz Attempt Flow
 
-### `GET /api/quizzes/{quiz_id}/questions`
-
-Use this to fetch the stored question set for a quiz.
-
-| Field | Location | Type | Allowed values | Where to fetch valid values |
-|---|---|---|---|---|
-| `quiz_id` | Path | integer | Existing quiz ID | Comes from quiz creation/start responses |
-| `skip` | Query | integer | `>= 0` | Static |
-| `limit` | Query | integer | `1..100` | Static |
-
-The response contains:
-
-- `question_snapshot_text`
-- `question_type`
-- `options`
-
-Use this when you want the quiz definition itself, not the student’s current answer state.
-
 ### `GET /api/quiz-attempts/{attempt_id}/questions`
 
 Use this to restore attempt state after refresh or reconnection, or to load questions for the active attempt.
 
 | Field | Location | Type | Allowed values | Where to fetch valid values |
 |---|---|---|---|---|
-| `attempt_id` | Path | integer | Existing attempt ID | Comes from assessment practice start or quiz attempt start |
+| `attempt_id` | Path | integer | Existing attempt ID | Comes from `POST /api/assessments/{assessment_id}/practice/start` |
 | `skip` | Query | integer | `>= 0` | Static |
 | `limit` | Query | integer | `1..100` | Static |
 

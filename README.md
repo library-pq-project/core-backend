@@ -266,10 +266,6 @@ Use the APIs with this separation:
 - `assessments`
   - browse past question sets
   - start practice from an assessment with `POST /api/assessments/{assessment_id}/practice/start`
-- `quizzes`
-  - hold the generated question set and configuration
-  - `GET /api/quizzes/{quiz_id}/questions` returns the quiz's full question set snapshot
-  - start a fresh attempt with `POST /api/quizzes/{quiz_id}/attempts/start`
 - `quiz-attempts`
   - handle the active student work
   - `GET /api/quiz-attempts/{attempt_id}`
@@ -290,5 +286,5 @@ Straight student flow:
 7. `GET /api/quiz-attempts/{attempt_id}/review`
 
 Route meaning:
-- `GET /api/quizzes/{quiz_id}/questions`: the quiz's stored question set
+- `GET /api/assessments/{assessment_id}/questions`: the source assessment question bank
 - `GET /api/quiz-attempts/{attempt_id}/questions`: the student's working view tied to one attempt

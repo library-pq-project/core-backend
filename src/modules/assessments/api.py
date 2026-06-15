@@ -16,7 +16,7 @@ from src.modules.assessments.service import AssessmentService
 from src.modules.auth.api import get_current_user, require_admin
 from src.modules.auth.models import User
 from src.modules.questions.schemas import QuestionRead
-from src.modules.quizzes.schemas import QuizAttemptRead, QuizRead
+from src.modules.quizzes.schemas import QuizAttemptRead
 from src.modules.quizzes.service import QuizService
 from src.modules.quizzes.repository import QuizRepository
 
@@ -66,15 +66,6 @@ async def list_assessments(
     )
 
 
-@router.get("/{assessment_id}", response_model=AssessmentRead)
-async def get_assessment(
-    assessment_id: int,
-    service: AssessmentService = Depends(get_assessment_service),
-    _: User = Depends(get_current_user),
-):
-    return service.get_assessment(assessment_id)
-
-
 @router.get("/{assessment_id}/practice-config", response_model=AssessmentPracticeConfigRead)
 async def get_assessment_practice_config(
     assessment_id: int,
@@ -102,7 +93,7 @@ async def start_practice_from_assessment(
         reveal_answers_post_submit=payload.reveal_answers_post_submit,
     )
     return {
-        "quiz": QuizRead.model_validate(quiz),
+        "quiz_id": quiz.id,
         "attempt": QuizAttemptRead.model_validate(attempt),
         "available_question_count": available_count,
     }

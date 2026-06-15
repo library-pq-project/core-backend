@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from src.modules.quizzes.schemas import QuizAttemptRead, QuizRead
+from src.modules.quizzes.schemas import QuizAttemptRead
 
 
 class AssessmentCreate(BaseModel):
@@ -71,6 +71,6 @@ class AssessmentPracticeStartInput(BaseModel):
 
 
 class AssessmentPracticeStartResponse(BaseModel):
-    quiz: QuizRead
+    quiz_id: int
     attempt: QuizAttemptRead
     available_question_count: int
