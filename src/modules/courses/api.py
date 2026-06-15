@@ -7,14 +7,16 @@ from src.modules.auth.api import require_admin
 from src.modules.auth.models import User
 from src.modules.auth.api import get_current_user
 from src.modules.courses.repository import CourseRepository
-from src.modules.courses.schemas import CourseCompactRead, CourseCreate, CourseRead, CourseUpdate
+from src.modules.courses.schemas import CourseCompactRead, CourseCompactUploadRead, CourseCreate, CourseRead, CourseUpdate
 from src.modules.courses.service import CourseService
+from src.modules.topics.repository import TopicRepository
+from src.modules.topics.schemas import TopicBulkUpsertResult
 
 router = APIRouter()
 
 
 def get_course_service(db: Session = Depends(get_db)) -> CourseService:
-    return CourseService(CourseRepository(db))
+    return CourseService(CourseRepository(db), topic_repository=TopicRepository(db))
 
 
 @router.get("", response_model=list[CourseRead])
@@ -65,7 +67,7 @@ async def delete_course(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/{course_id}/compacts", response_model=CourseCompactRead, status_code=status.HTTP_201_CREATED)
+@router.post("/{course_id}/compacts", response_model=CourseCompactUploadRead, status_code=status.HTTP_201_CREATED)
 async def upload_course_compact(
     course_id: int,
     title: str = Form(...),
@@ -73,12 +75,15 @@ async def upload_course_compact(
     current_user: User = Depends(require_admin),
     service: CourseService = Depends(get_course_service),
 ):
-    return service.upload_course_compact(
+    compact, imported_topics = service.upload_course_compact(
         course_id=course_id,
         title=title,
         upload_file=file,
         admin_user_id=current_user.id,
     )
+    payload = CourseCompactRead.model_validate(compact).model_dump()
+    payload["imported_topics"] = imported_topics
+    return payload
 
 
 @router.get("/{course_id}/compacts", response_model=list[CourseCompactRead])
@@ -110,3 +115,13 @@ async def activate_course_compact(
     service: CourseService = Depends(get_course_service),
 ):
     return service.activate_compact(course_id, compact_id)
+
+
+@router.post("/{course_id}/compacts/{compact_id}/import-topics", response_model=TopicBulkUpsertResult)
+async def import_topics_from_compact(
+    course_id: int,
+    compact_id: int,
+    _: User = Depends(require_admin),
+    service: CourseService = Depends(get_course_service),
+):
+    return service.import_topics_from_compact(course_id=course_id, compact_id=compact_id)

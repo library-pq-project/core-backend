@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from src.modules.topics.schemas import TopicBulkUpsertResult
+
 
 class CourseRead(BaseModel):
     id: int
@@ -45,3 +47,7 @@ class CourseCompactRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class CourseCompactUploadRead(CourseCompactRead):
+    imported_topics: TopicBulkUpsertResult | None = None

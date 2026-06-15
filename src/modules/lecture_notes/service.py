@@ -52,10 +52,6 @@ class LectureNoteService:
             reference_tokens.update(self._tokenize(topic.name))
             if topic.description:
                 reference_tokens.update(self._tokenize(topic.description))
-        compact = context["compact"]
-        if compact and compact.extracted_text:
-            reference_tokens.update(self._tokenize(compact.extracted_text[:5000]))
-
         note_tokens = self._tokenize(extracted_text[:25000])
         if not reference_tokens or not note_tokens:
             return 0.0, "warning", "Insufficient tokens to compute relevance."
@@ -66,7 +62,7 @@ class LectureNoteService:
         reason = (
             "Lecture note appears relevant to selected course."
             if status_value == "accepted"
-            else "Lecture note relevance is low compared to course compact/topics."
+            else "Lecture note relevance is low compared to course topics and course metadata."
         )
         return score, status_value, reason
 

@@ -5,18 +5,31 @@ from pypdf import PdfReader
 from sqlalchemy.exc import IntegrityError
 
 from src.common.utils import generate_slug
+from src.modules.courses.ai_topic_extractor import CourseTopicExtractor, GeminiCourseTopicExtractor
 from src.modules.courses.models import Course, CourseCompact
 from src.modules.courses.repository import CourseRepository
 from src.modules.courses.schemas import CourseCreate, CourseUpdate
 from src.modules.lecture_notes.storage import FileStorageProvider, build_storage_provider
+from src.modules.topics.repository import TopicRepository
+from src.modules.topics.schemas import TopicBulkRow, TopicBulkUpsertRequest, TopicBulkUpsertResult
+from src.modules.topics.service import TopicService
 
 
 class CourseService:
     SUPPORTED_COMPACT_TYPES = {"pdf", "docx", "txt", "md", "json"}
 
-    def __init__(self, repository: CourseRepository, storage_provider: FileStorageProvider | None = None):
+    def __init__(
+        self,
+        repository: CourseRepository,
+        storage_provider: FileStorageProvider | None = None,
+        topic_repository: TopicRepository | None = None,
+        topic_extractor: CourseTopicExtractor | None = None,
+    ):
         self.repository = repository
         self._storage_provider = storage_provider
+        self.topic_repository = topic_repository or TopicRepository(repository.db)
+        self.topic_service = TopicService(self.topic_repository)
+        self.topic_extractor = topic_extractor or GeminiCourseTopicExtractor()
 
     @property
     def storage_provider(self) -> FileStorageProvider:
@@ -115,6 +128,48 @@ class CourseService:
         except Exception:
             return None, "failed"
 
+    def _build_topic_rows_from_compact(self, *, course_id: int, compact_text: str, course_title: str) -> list[TopicBulkRow]:
+        topic_names = self.topic_extractor.extract_topics(course_title=course_title, compact_text=compact_text)
+        rows: list[TopicBulkRow] = []
+        seen: set[str] = set()
+        for item in topic_names:
+            cleaned = " ".join(item.split()).strip()
+            if not cleaned:
+                continue
+            normalized = cleaned.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            rows.append(TopicBulkRow(course_id=course_id, name=cleaned, description="Imported from course compact"))
+        return rows
+
+    def import_topics_from_compact(self, *, course_id: int, compact_id: int) -> TopicBulkUpsertResult:
+        self.get_course(course_id)
+        compact = self.repository.get_compact(compact_id)
+        if compact is None or compact.course_id != course_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Compact not found")
+        if compact.text_extraction_status != "completed" or not compact.extracted_text:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Compact text extraction is not available for topic import",
+            )
+
+        course = self.get_course(course_id)
+        rows = self._build_topic_rows_from_compact(
+            course_id=course_id,
+            compact_text=compact.extracted_text,
+            course_title=course.title,
+        )
+        if not rows:
+            return TopicBulkUpsertResult(
+                created_count=0,
+                updated_count=0,
+                skipped_count=1,
+                errors=[],
+                topic_ids=[],
+            )
+        return self.topic_service.bulk_upsert_topics(TopicBulkUpsertRequest(rows=rows))
+
     def upload_course_compact(
         self,
         *,
@@ -122,7 +177,7 @@ class CourseService:
         title: str,
         upload_file: UploadFile,
         admin_user_id: int,
-    ) -> CourseCompact:
+    ) -> tuple[CourseCompact, TopicBulkUpsertResult | None]:
         course = self.get_course(course_id)
         extension = upload_file.filename.split(".")[-1].lower() if upload_file.filename else ""
         if extension not in self.SUPPORTED_COMPACT_TYPES:
@@ -161,7 +216,15 @@ class CourseService:
             created_by_user_id=admin_user_id,
         )
         self.repository.deactivate_compacts(course_id)
-        return self.repository.create_compact(compact)
+        compact = self.repository.create_compact(compact)
+
+        imported_topics = None
+        if extraction_status == "completed" and extracted_text:
+            try:
+                imported_topics = self.import_topics_from_compact(course_id=course.id, compact_id=compact.id)
+            except Exception:
+                imported_topics = None
+        return compact, imported_topics
 
     def list_course_compacts(self, course_id: int, *, active_only: bool, skip: int, limit: int) -> list[CourseCompact]:
         self.get_course(course_id)

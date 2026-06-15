@@ -146,12 +146,6 @@ class AIQuestionGenerationService:
             f"Course title: {course.title}",
             f"Course description: {course.description or ''}",
         ]
-        compact = self.course_repository.get_active_compact(payload.course_id)
-        if compact:
-            context_blocks.append(f"Active compact version: {compact.version}")
-            context_blocks.append(f"Compact summary: {compact.compact_summary or ''}")
-            context_blocks.append(f"Compact taxonomy: {compact.taxonomy_text or ''}")
-            context_blocks.append(f"Common pitfalls: {compact.pitfalls_text or ''}")
 
         selected_topics = []
         normalized_topic_ids = self._normalize_topic_ids(payload.topic_ids)

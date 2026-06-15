@@ -162,11 +162,13 @@ Applied during AI generation and question bulk import:
 
 Admin endpoints:
 - `POST /api/courses/{course_id}/compacts` upload compact (`pdf/docx/txt/md/json`)
+- compact upload now attempts AI topic extraction and bulk topic import for the course
+- `POST /api/courses/{course_id}/compacts/{compact_id}/import-topics` retry topic extraction/import for a compact
 - `POST /api/courses/{course_id}/compacts/{compact_id}/activate` set active compact
 - `GET /api/courses/{course_id}/compacts`
 - `GET /api/courses/{course_id}/compact-active`
 
-Active compact text is injected into AI generation context.
+Course compacts are used as course-level source documents for AI topic extraction and bulk topic import.
 
 ## File Storage Provider
 
