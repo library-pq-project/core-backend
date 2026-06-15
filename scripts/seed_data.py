@@ -115,12 +115,14 @@ def _get_or_create_user(
 
 
 def _get_or_create_course(db, *, code: str, title: str, description: str, level: str, semester: str) -> Course:
+    semester_record = _get_or_create_semester(db, semester)
     course = db.scalar(select(Course).where(Course.code == code))
     if course:
         course.title = title
         course.description = description
         course.level = level
         course.semester = semester
+        course.semester_id = semester_record.id
         return course
 
     course = Course(
@@ -130,6 +132,7 @@ def _get_or_create_course(db, *, code: str, title: str, description: str, level:
         description=description,
         level=level,
         semester=semester,
+        semester_id=semester_record.id,
     )
     db.add(course)
     db.flush()

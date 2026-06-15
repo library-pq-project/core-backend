@@ -14,6 +14,11 @@ class Course(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     level: Mapped[str | None] = mapped_column(String(50), nullable=True)
     semester: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    semester_id: Mapped[int | None] = mapped_column(
+        ForeignKey("semesters.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     topics = relationship("Topic", back_populates="course", cascade="all, delete-orphan")

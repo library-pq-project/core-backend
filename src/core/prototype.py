@@ -94,6 +94,12 @@ def ensure_prototype_course(db: Session, *, course_id: int) -> Course:
         return course
 
     code = f"PROTO{course_id}"
+    semester = db.scalar(select(Semester).where(Semester.name == "First"))
+    if semester is None:
+        semester = Semester(name="First", slug=generate_slug("First"), is_active=True)
+        db.add(semester)
+        db.flush()
+
     course = Course(
         id=course_id,
         code=code,
@@ -102,6 +108,7 @@ def ensure_prototype_course(db: Session, *, course_id: int) -> Course:
         description="Auto-created course for prototype AI generation",
         level="400",
         semester="First",
+        semester_id=semester.id,
     )
     db.add(course)
     db.flush()

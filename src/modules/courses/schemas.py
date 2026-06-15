@@ -12,6 +12,7 @@ class CourseRead(BaseModel):
     title: str
     description: str | None
     level: str | None
+    semester_id: int | None
     semester: str | None
     active_compact_version: int | None = None
 
@@ -23,7 +24,7 @@ class CourseCreate(BaseModel):
     title: str
     description: str | None = None
     level: str | None = None
-    semester: str | None = None
+    semester_id: int
 
 
 class CourseUpdate(BaseModel):
@@ -31,7 +32,7 @@ class CourseUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     level: str | None = None
-    semester: str | None = None
+    semester_id: int | None = None
 
 
 class CourseCompactRead(BaseModel):

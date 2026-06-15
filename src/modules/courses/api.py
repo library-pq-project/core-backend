@@ -23,9 +23,24 @@ def get_course_service(db: Session = Depends(get_db)) -> CourseService:
 async def list_courses(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    semester_id: int | None = Query(default=None, ge=1),
+    level: str | None = Query(default=None),
+    program_id: int | None = Query(default=None, ge=1),
+    academic_session_id: int | None = Query(default=None, ge=1),
+    code: str | None = Query(default=None),
+    search: str | None = Query(default=None),
     service: CourseService = Depends(get_course_service),
 ):
-    return service.list_courses(skip=skip, limit=limit)
+    return service.list_courses(
+        skip=skip,
+        limit=limit,
+        semester_id=semester_id,
+        level=level,
+        program_id=program_id,
+        academic_session_id=academic_session_id,
+        code=code,
+        search=search,
+    )
 
 
 @router.get("/slug/{course_slug}", response_model=CourseRead)

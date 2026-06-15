@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from src.modules.academic.models import ProgramCourseOffering, Semester
 from src.modules.courses.models import Course, CourseCompact
 
 
@@ -10,8 +11,60 @@ class CourseRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def list(self, *, skip: int, limit: int) -> list[Course]:
-        stmt = select(Course).order_by(Course.code).offset(skip).limit(limit)
+    def list(
+        self,
+        *,
+        skip: int,
+        limit: int,
+        semester_id: int | None = None,
+        level: str | None = None,
+        program_id: int | None = None,
+        academic_session_id: int | None = None,
+        code: str | None = None,
+        search: str | None = None,
+    ) -> list[Course]:
+        stmt = select(Course)
+        join_offerings = any(value is not None for value in (program_id, academic_session_id))
+
+        if join_offerings:
+            stmt = stmt.join(ProgramCourseOffering, ProgramCourseOffering.course_id == Course.id)
+            stmt = stmt.distinct()
+            if program_id is not None:
+                stmt = stmt.where(ProgramCourseOffering.program_id == program_id)
+            if academic_session_id is not None:
+                stmt = stmt.where(ProgramCourseOffering.academic_session_id == academic_session_id)
+
+        if level is not None:
+            if join_offerings:
+                stmt = stmt.where(or_(Course.level == level, ProgramCourseOffering.level == level))
+            else:
+                stmt = stmt.where(Course.level == level)
+
+        if semester_id is not None:
+            if join_offerings:
+                stmt = stmt.where(
+                    or_(
+                        Course.semester_id == semester_id,
+                        ProgramCourseOffering.semester_id == semester_id,
+                    )
+                )
+            else:
+                stmt = stmt.where(Course.semester_id == semester_id)
+
+        if code is not None:
+            stmt = stmt.where(Course.code == code)
+
+        if search is not None:
+            term = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    Course.code.ilike(term),
+                    Course.title.ilike(term),
+                    Course.description.ilike(term),
+                )
+            )
+
+        stmt = stmt.order_by(Course.code).offset(skip).limit(limit)
         return list(self.db.scalars(stmt))
 
     def get(self, course_id: int) -> Course | None:
@@ -19,6 +72,9 @@ class CourseRepository:
 
     def get_by_slug(self, slug: str) -> Course | None:
         return self.db.scalar(select(Course).where(Course.slug == slug))
+
+    def get_semester(self, semester_id: int) -> Semester | None:
+        return self.db.get(Semester, semester_id)
 
     def create(self, course: Course) -> Course:
         self.db.add(course)

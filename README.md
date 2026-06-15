@@ -35,6 +35,36 @@ uvicorn src.main:app --reload
 
 API docs: `http://127.0.0.1:8000/api/docs`
 
+## Course Setup and Filtering
+
+Course creation now requires a real academic semester reference.
+
+Example `POST /api/courses` payload:
+
+```json
+{
+  "code": "CSC411",
+  "title": "Artificial Intelligence",
+  "description": "Core AI concepts",
+  "level": "400",
+  "semester_id": 1
+}
+```
+
+Useful course listing filters on `GET /api/courses`:
+- `semester_id`
+- `level`
+- `program_id`
+- `academic_session_id`
+- `code`
+- `search`
+
+Example:
+
+```bash
+GET /api/courses?semester_id=1&program_id=2&academic_session_id=3&level=400
+```
+
 ## Prototype Mode (Dev only)
 
 Use this mode to unblock AI generation without JWT/program/session setup friction.

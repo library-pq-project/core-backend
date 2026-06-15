@@ -37,8 +37,28 @@ class CourseService:
             self._storage_provider = build_storage_provider()
         return self._storage_provider
 
-    def list_courses(self, *, skip: int, limit: int) -> list[Course]:
-        courses = self.repository.list(skip=skip, limit=limit)
+    def list_courses(
+        self,
+        *,
+        skip: int,
+        limit: int,
+        semester_id: int | None = None,
+        level: str | None = None,
+        program_id: int | None = None,
+        academic_session_id: int | None = None,
+        code: str | None = None,
+        search: str | None = None,
+    ) -> list[Course]:
+        courses = self.repository.list(
+            skip=skip,
+            limit=limit,
+            semester_id=semester_id,
+            level=level,
+            program_id=program_id,
+            academic_session_id=academic_session_id,
+            code=code,
+            search=search,
+        )
         for course in courses:
             active_compact = self.repository.get_active_compact(course.id)
             setattr(course, "active_compact_version", active_compact.version if active_compact else None)
@@ -61,13 +81,18 @@ class CourseService:
         return course
 
     def create_course(self, payload: CourseCreate) -> Course:
+        semester = self.repository.get_semester(payload.semester_id)
+        if semester is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
+
         course = Course(
             code=payload.code,
             slug=generate_slug(payload.code),
             title=payload.title,
             description=payload.description,
             level=payload.level,
-            semester=payload.semester,
+            semester_id=semester.id,
+            semester=semester.name,
         )
         try:
             return self.repository.create(course)
@@ -83,16 +108,24 @@ class CourseService:
 
         if "code" in updates:
             course.code = updates["code"]
-        if "title" in updates:
-            course.slug = generate_slug(updates["title"])
+            course.slug = generate_slug(updates["code"])
         if "title" in updates:
             course.title = updates["title"]
         if "description" in updates:
             course.description = updates["description"]
         if "level" in updates:
             course.level = updates["level"]
-        if "semester" in updates:
-            course.semester = updates["semester"]
+        if "semester_id" in updates:
+            semester_id = updates["semester_id"]
+            if semester_id is None:
+                course.semester_id = None
+                course.semester = None
+            else:
+                semester = self.repository.get_semester(semester_id)
+                if semester is None:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
+                course.semester_id = semester.id
+                course.semester = semester.name
 
         try:
             return self.repository.save(course)
