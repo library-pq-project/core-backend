@@ -174,6 +174,17 @@ Active compact text is injected into AI generation context.
 - `local` for development
 - `s3` for production
 
+### Local storage mode
+
+For local development, use:
+
+```bash
+FILE_STORAGE_PROVIDER=local
+UPLOAD_DIR=uploads
+```
+
+No R2 / S3 credentials are required in local mode.
+
 When using `s3`, configure:
 - `S3_ENDPOINT_URL` (optional for S3-compatible services)
 - `R2_ACCOUNT_ID` (optional helper for Cloudflare R2; endpoint is auto-derived if `S3_ENDPOINT_URL` is empty)
@@ -195,6 +206,10 @@ S3_SECRET_ACCESS_KEY=<r2_secret_access_key>
 S3_REGION=auto
 S3_ADDRESSING_STYLE=path
 ```
+
+Notes:
+- non-upload endpoints do not require R2 credentials even if upload features exist in the project
+- upload endpoints only initialize object storage when they are actually used
 
 ## Admin Swagger Login
 

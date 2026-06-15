@@ -56,6 +56,37 @@ class AIQuestionGenerationService:
         cleaned = sorted({topic_id for topic_id in topic_ids if topic_id and topic_id > 0})
         return cleaned or None
 
+    def _is_reusable_question_type_match(
+        self, *, requested_type: str, questions: list[Question], requested_count: int
+    ) -> bool:
+        sample = questions[:requested_count]
+        if len(sample) < requested_count:
+            return False
+
+        if requested_type != "mixed":
+            return all(question.question_type == requested_type for question in sample)
+
+        actual_types = {question.question_type for question in sample}
+        return (
+            "mixed" not in actual_types
+            and "objective" in actual_types
+            and "theory" in actual_types
+            and actual_types.issubset({"objective", "theory", "practical", "case_based"})
+        )
+
+    def _build_generation_plan(self, requested_count: int, question_type: str) -> list[tuple[str, int]]:
+        if question_type != "mixed":
+            return [(question_type, requested_count)]
+
+        objective_count = (requested_count + 1) // 2
+        theory_count = requested_count // 2
+        plan: list[tuple[str, int]] = []
+        if objective_count:
+            plan.append(("objective", objective_count))
+        if theory_count:
+            plan.append(("theory", theory_count))
+        return plan
+
     def _create_generated_assessment(
         self,
         *,
@@ -198,8 +229,13 @@ class AIQuestionGenerationService:
             existing_questions = self.repository.list_ai_questions_by_fingerprint(
                 fingerprint, payload.requested_count
             )
-            if len(existing_questions) >= payload.requested_count:
-                request.model_name = getattr(self.ai_client, "model", "gemini-3.1-pro-preview")
+            reusable_cache = self._is_reusable_question_type_match(
+                requested_type=payload.question_type,
+                questions=existing_questions,
+                requested_count=payload.requested_count,
+            )
+            if reusable_cache:
+                request.model_name = getattr(self.ai_client, "model", "gemini-3.1-flash-lite-preview")
                 request.estimated_input_tokens = 0
                 request.estimated_output_tokens = max(1, sum(len(item.question_text or "") for item in existing_questions) // 4)
                 self.repository.mark_request(request, GenerationStatus.COMPLETED)
@@ -212,18 +248,33 @@ class AIQuestionGenerationService:
                     request.estimated_input_tokens,
                     request.estimated_output_tokens,
                 )
+            if not reusable_cache:
+                existing_questions = []
 
             context_text = self._get_context_text(payload, user_id)
-            generated_payloads, telemetry = self.ai_client.generate_questions(
-                context_text=context_text,
-                question_type=payload.question_type,
-                difficulty_level=payload.difficulty_level,
-                user_prompt=payload.user_prompt,
-                requested_count=payload.requested_count - len(existing_questions),
-            )
-            request.model_name = telemetry.model_name
-            request.estimated_input_tokens = telemetry.estimated_input_tokens
-            request.estimated_output_tokens = telemetry.estimated_output_tokens
+            remaining_count = max(0, payload.requested_count - len(existing_questions))
+            generation_plan = self._build_generation_plan(remaining_count, payload.question_type)
+            generated_payloads = []
+            total_input_tokens = 0
+            total_output_tokens = 0
+            model_name = getattr(self.ai_client, "model", "gemini-2.5-flash-lite")
+
+            for generation_type, generation_count in generation_plan:
+                batch_payloads, telemetry = self.ai_client.generate_questions(
+                    context_text=context_text,
+                    question_type=generation_type,
+                    difficulty_level=payload.difficulty_level,
+                    user_prompt=payload.user_prompt,
+                    requested_count=generation_count,
+                )
+                generated_payloads.extend(batch_payloads)
+                model_name = telemetry.model_name
+                total_input_tokens += telemetry.estimated_input_tokens
+                total_output_tokens += telemetry.estimated_output_tokens
+
+            request.model_name = model_name
+            request.estimated_input_tokens = total_input_tokens
+            request.estimated_output_tokens = total_output_tokens
 
             created_questions: list[Question] = []
             for generated in generated_payloads:
@@ -242,11 +293,16 @@ class AIQuestionGenerationService:
                     question_text=generated.question_text,
                     source_text=generated.question_text,
                     content_format="markdown_latex",
-                    question_type=payload.question_type,
+                    question_type=generated.question_type,
                     source_type=QuestionSourceType.AI_GENERATED.value,
                     difficulty_level=payload.difficulty_level if payload.difficulty_level != "mixed" else "medium",
-                    mark_allocation=1,
-                    marking_scheme="Award full mark for complete correctness and conceptual accuracy.",
+                    mark_allocation=1 if generated.question_type == "objective" else 5,
+                    marking_scheme=generated.marking_scheme
+                    or (
+                        "Award full mark for complete correctness and conceptual accuracy."
+                        if generated.question_type == "objective"
+                        else "Award marks for conceptual accuracy, completeness, and a relevant example."
+                    ),
                     solution_text=generated.solution_text,
                     explanation=generated.explanation,
                     generation_fingerprint=fingerprint,
@@ -254,14 +310,15 @@ class AIQuestionGenerationService:
                     ai_topic_trace=trace,
                     is_active=True,
                 )
-                question.options = [
-                    QuestionOption(
-                        option_text=option_text,
-                        is_correct=index == generated.correct_index,
-                        position=index + 1,
-                    )
-                    for index, option_text in enumerate(generated.options)
-                ]
+                if generated.question_type == "objective":
+                    question.options = [
+                        QuestionOption(
+                            option_text=option_text,
+                            is_correct=index == generated.correct_index,
+                            position=index + 1,
+                        )
+                        for index, option_text in enumerate(generated.options)
+                    ]
                 created_questions.append(question)
 
             if created_questions:
@@ -274,9 +331,9 @@ class AIQuestionGenerationService:
                 combined,
                 len(existing_questions),
                 len(created_questions),
-                telemetry.model_name,
-                telemetry.estimated_input_tokens,
-                telemetry.estimated_output_tokens,
+                model_name,
+                total_input_tokens,
+                total_output_tokens,
             )
         except Exception as exc:
             request.failure_reason = str(exc)[:500]

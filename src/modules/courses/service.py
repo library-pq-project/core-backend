@@ -8,15 +8,21 @@ from src.common.utils import generate_slug
 from src.modules.courses.models import Course, CourseCompact
 from src.modules.courses.repository import CourseRepository
 from src.modules.courses.schemas import CourseCreate, CourseUpdate
-from src.modules.lecture_notes.storage import FileStorageProvider
+from src.modules.lecture_notes.storage import FileStorageProvider, build_storage_provider
 
 
 class CourseService:
     SUPPORTED_COMPACT_TYPES = {"pdf", "docx", "txt", "md", "json"}
 
-    def __init__(self, repository: CourseRepository, storage_provider: FileStorageProvider):
+    def __init__(self, repository: CourseRepository, storage_provider: FileStorageProvider | None = None):
         self.repository = repository
-        self.storage_provider = storage_provider
+        self._storage_provider = storage_provider
+
+    @property
+    def storage_provider(self) -> FileStorageProvider:
+        if self._storage_provider is None:
+            self._storage_provider = build_storage_provider()
+        return self._storage_provider
 
     def list_courses(self, *, skip: int, limit: int) -> list[Course]:
         courses = self.repository.list(skip=skip, limit=limit)
@@ -87,19 +93,22 @@ class CourseService:
         course = self.get_course(course_id)
         self.repository.delete(course)
 
-    def _extract_text(self, file_path: str, extension: str) -> tuple[str | None, str]:
+    def _extract_text_from_bytes(self, content: bytes, extension: str) -> tuple[str | None, str]:
         try:
             if extension in {"txt", "md", "json"}:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as file:
-                    return file.read(), "completed"
+                return content.decode("utf-8", errors="ignore"), "completed"
 
             if extension == "pdf":
-                reader = PdfReader(file_path)
+                from io import BytesIO
+
+                reader = PdfReader(BytesIO(content))
                 text = "\n".join(page.extract_text() or "" for page in reader.pages)
                 return text, "completed"
 
             if extension == "docx":
-                doc = Document(file_path)
+                from io import BytesIO
+
+                doc = Document(BytesIO(content))
                 text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
                 return text, "completed"
             return None, "failed"
@@ -127,7 +136,7 @@ class CourseService:
             original_name=upload_file.filename or f"compact.{extension}",
             content=content,
         )
-        extracted_text, extraction_status = self._extract_text(stored.path, extension)
+        extracted_text, extraction_status = self._extract_text_from_bytes(content, extension)
         summary = (extracted_text or "")[:2000] if extraction_status == "completed" else None
 
         version = self.repository.get_next_compact_version(course_id)

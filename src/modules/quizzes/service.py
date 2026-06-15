@@ -18,7 +18,13 @@ from src.modules.quizzes.schemas import QuizCreate, QuizSubmitInput
 class QuizService:
     def __init__(self, repository: QuizRepository, storage_provider: FileStorageProvider | None = None):
         self.repository = repository
-        self.storage_provider = storage_provider or build_storage_provider()
+        self._storage_provider = storage_provider
+
+    @property
+    def storage_provider(self) -> FileStorageProvider:
+        if self._storage_provider is None:
+            self._storage_provider = build_storage_provider()
+        return self._storage_provider
 
     def _extract_theory_answer_text(self, content: bytes, extension: str) -> tuple[str | None, str]:
         try:

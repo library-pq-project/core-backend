@@ -9,13 +9,12 @@ from src.modules.auth.api import get_current_user
 from src.modules.courses.repository import CourseRepository
 from src.modules.courses.schemas import CourseCompactRead, CourseCreate, CourseRead, CourseUpdate
 from src.modules.courses.service import CourseService
-from src.modules.lecture_notes.storage import build_storage_provider
 
 router = APIRouter()
 
 
 def get_course_service(db: Session = Depends(get_db)) -> CourseService:
-    return CourseService(CourseRepository(db), build_storage_provider())
+    return CourseService(CourseRepository(db))
 
 
 @router.get("", response_model=list[CourseRead])

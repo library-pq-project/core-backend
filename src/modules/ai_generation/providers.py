@@ -14,11 +14,13 @@ from src.core.config import settings
 
 @dataclass
 class GeneratedQuestionPayload:
+    question_type: str
     question_text: str
     options: list[str]
-    correct_index: int
+    correct_index: int | None
     solution_text: str
     explanation: str
+    marking_scheme: str | None = None
 
 
 @dataclass
@@ -57,16 +59,32 @@ class GeminiQuestionGenerator:
         requested_count: int,
         context_text: str,
     ) -> tuple[list[GeneratedQuestionPayload], AIUsageTelemetry]:
-        output = [
-            GeneratedQuestionPayload(
-                question_text=f"[{question_type.upper()}] Generated question {idx}: {context_text[:120]}",
-                options=["Option A", "Option B", "Option C", "Option D"],
-                correct_index=1,
-                solution_text="Model answer placeholder",
-                explanation="AI-generated explanation placeholder",
-            )
-            for idx in range(1, requested_count + 1)
-        ]
+        output: list[GeneratedQuestionPayload] = []
+        for idx in range(1, requested_count + 1):
+            if question_type == "objective":
+                output.append(
+                    GeneratedQuestionPayload(
+                        question_type="objective",
+                        question_text=f"[OBJECTIVE] Generated question {idx}: {context_text[:120]}",
+                        options=["Option A", "Option B", "Option C", "Option D"],
+                        correct_index=1,
+                        solution_text="Model answer placeholder",
+                        explanation="AI-generated explanation placeholder",
+                        marking_scheme="Award full mark for choosing the correct option.",
+                    )
+                )
+            else:
+                output.append(
+                    GeneratedQuestionPayload(
+                        question_type=question_type,
+                        question_text=f"[{question_type.upper()}] Generated question {idx}: {context_text[:120]}",
+                        options=[],
+                        correct_index=None,
+                        solution_text="Model answer placeholder",
+                        explanation="AI-generated explanation placeholder",
+                        marking_scheme="Award marks for conceptual accuracy, completeness, and a relevant example.",
+                    )
+                )
         telemetry = AIUsageTelemetry(
             model_name=self.model,
             estimated_input_tokens=max(1, len(context_text) // 4),
@@ -100,14 +118,27 @@ class GeminiQuestionGenerator:
                 )
             raise RuntimeError("httpx is not installed in this environment. Install dependencies in your active venv.")
 
-        prompt = (
-            "You are generating university exam preparation questions. "
-            "Return strict JSON array only. Each item must include fields: "
-            "question_text, options (exactly 4), correct_index (0-3), solution_text, explanation. "
-            f"question_type={question_type}, difficulty={difficulty_level}, requested_count={requested_count}. "
-            f"user_prompt={user_prompt}. "
-            f"context={context_text[:4000]}"
-        )
+        if question_type == "objective":
+            prompt = (
+                "You are generating university objective exam preparation questions. "
+                "Return strict JSON array only. Each item must include fields: "
+                "question_type, question_text, options (exactly 4 strings), correct_index (0-3), "
+                "solution_text, explanation, marking_scheme. "
+                "Set question_type to 'objective'. "
+                f"difficulty={difficulty_level}, requested_count={requested_count}. "
+                f"user_prompt={user_prompt}. "
+                f"context={context_text[:4000]}"
+            )
+        else:
+            prompt = (
+                "You are generating university theory-style exam preparation questions. "
+                "Return strict JSON array only. Each item must include fields: "
+                "question_type, question_text, solution_text, explanation, marking_scheme. "
+                "Set question_type to the requested type and do not include objective options. "
+                f"requested_type={question_type}, difficulty={difficulty_level}, requested_count={requested_count}. "
+                f"user_prompt={user_prompt}. "
+                f"context={context_text[:4000]}"
+            )
 
         url = f"{self.BASE_URL}/{self.model}:generateContent"
         payload = {
@@ -144,13 +175,18 @@ class GeminiQuestionGenerator:
                 parsed = json.loads(clean)
                 output: list[GeneratedQuestionPayload] = []
                 for item in parsed[:requested_count]:
+                    parsed_type = str(item.get("question_type") or question_type).strip().lower()
+                    if parsed_type not in {"objective", "theory", "practical", "case_based"}:
+                        parsed_type = question_type
                     output.append(
                         GeneratedQuestionPayload(
+                            question_type=parsed_type,
                             question_text=item["question_text"],
-                            options=item["options"][:4],
-                            correct_index=int(item["correct_index"]),
+                            options=list(item.get("options") or [])[:4],
+                            correct_index=int(item["correct_index"]) if item.get("correct_index") is not None else None,
                             solution_text=item["solution_text"],
                             explanation=item["explanation"],
+                            marking_scheme=item.get("marking_scheme"),
                         )
                     )
                 if output:
