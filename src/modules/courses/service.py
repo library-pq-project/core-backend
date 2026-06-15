@@ -4,6 +4,7 @@ from fastapi import UploadFile
 from pypdf import PdfReader
 from sqlalchemy.exc import IntegrityError
 
+from src.common.errors import bad_request, conflict, not_found
 from src.common.utils import generate_slug
 from src.modules.courses.ai_topic_extractor import CourseTopicExtractor, GeminiCourseTopicExtractor
 from src.modules.courses.models import Course, CourseCompact
@@ -67,7 +68,7 @@ class CourseService:
     def get_course(self, course_id: int) -> Course:
         course = self.repository.get(course_id)
         if not course:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+            raise not_found("course", course_id)
         active_compact = self.repository.get_active_compact(course.id)
         setattr(course, "active_compact_version", active_compact.version if active_compact else None)
         return course
@@ -75,7 +76,7 @@ class CourseService:
     def get_course_by_slug(self, course_slug: str) -> Course:
         course = self.repository.get_by_slug(course_slug)
         if not course:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+            raise not_found("course", course_slug)
         active_compact = self.repository.get_active_compact(course.id)
         setattr(course, "active_compact_version", active_compact.version if active_compact else None)
         return course
@@ -83,7 +84,7 @@ class CourseService:
     def create_course(self, payload: CourseCreate) -> Course:
         semester = self.repository.get_semester(payload.semester_id)
         if semester is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
+            raise not_found("semester", payload.semester_id)
 
         course = Course(
             code=payload.code,
@@ -97,9 +98,10 @@ class CourseService:
         try:
             return self.repository.create(course)
         except IntegrityError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Course with this code or slug already exists",
+            raise conflict(
+                f"Course with code {payload.code} already exists",
+                error_code="COURSE_ALREADY_EXISTS",
+                resource="course",
             ) from exc
 
     def update_course(self, course_id: int, payload: CourseUpdate) -> Course:
@@ -123,16 +125,18 @@ class CourseService:
             else:
                 semester = self.repository.get_semester(semester_id)
                 if semester is None:
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
+                    raise not_found("semester", semester_id)
                 course.semester_id = semester.id
                 course.semester = semester.name
 
         try:
             return self.repository.save(course)
         except IntegrityError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Course with this code or slug already exists",
+            raise conflict(
+                f"Course with code {course.code} could not be updated because it conflicts with existing course data",
+                error_code="COURSE_CONFLICT",
+                resource="course",
+                resource_id=course_id,
             ) from exc
 
     def delete_course(self, course_id: int) -> None:
@@ -180,11 +184,13 @@ class CourseService:
         self.get_course(course_id)
         compact = self.repository.get_compact(compact_id)
         if compact is None or compact.course_id != course_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Compact not found")
+            raise not_found("compact", compact_id)
         if compact.text_extraction_status != "completed" or not compact.extracted_text:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Compact text extraction is not available for topic import",
+            raise bad_request(
+                f"Compact with id {compact_id} does not have extracted text available for topic import",
+                error_code="COMPACT_TEXT_NOT_READY",
+                resource="compact",
+                resource_id=compact_id,
             )
 
         course = self.get_course(course_id)
@@ -214,11 +220,14 @@ class CourseService:
         course = self.get_course(course_id)
         extension = upload_file.filename.split(".")[-1].lower() if upload_file.filename else ""
         if extension not in self.SUPPORTED_COMPACT_TYPES:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported compact file type")
+            raise bad_request(
+                f"Unsupported compact file type '{extension or 'unknown'}'",
+                error_code="UNSUPPORTED_COMPACT_TYPE",
+            )
 
         content = upload_file.file.read()
         if not content:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Compact file is empty")
+            raise bad_request("Compact file is empty", error_code="EMPTY_COMPACT_FILE")
 
         stored = self.storage_provider.save(
             original_name=upload_file.filename or f"compact.{extension}",
@@ -267,14 +276,14 @@ class CourseService:
         self.get_course(course_id)
         compact = self.repository.get_active_compact(course_id)
         if compact is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active compact not found")
+            raise not_found("active_compact", course_id)
         return compact
 
     def activate_compact(self, course_id: int, compact_id: int) -> CourseCompact:
         self.get_course(course_id)
         compact = self.repository.get_compact(compact_id)
         if compact is None or compact.course_id != course_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Compact not found")
+            raise not_found("compact", compact_id)
         self.repository.deactivate_compacts(course_id)
         compact.is_active = True
         return self.repository.save(compact)

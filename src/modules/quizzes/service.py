@@ -2,10 +2,10 @@ import random
 from datetime import timedelta
 from io import BytesIO
 
-from fastapi import HTTPException, status
 from docx import Document
 from pypdf import PdfReader
 
+from src.common.errors import bad_request, not_found
 from src.common.enums import QuizStatus
 from src.common.utils import generate_slug, now_utc
 from src.core.config import settings
@@ -66,9 +66,9 @@ class QuizService:
         )
 
         if len(selected_questions) < payload.total_questions:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Not enough questions for the selected filters",
+            raise bad_request(
+                f"Only {len(selected_questions)} questions matched the selected filters, but {payload.total_questions} were requested",
+                error_code="INSUFFICIENT_QUIZ_QUESTIONS",
             )
 
         quiz = Quiz(
@@ -128,13 +128,13 @@ class QuizService:
     def get_quiz(self, quiz_id: int, user_id: int) -> Quiz:
         quiz = self.repository.get_user_quiz(quiz_id, user_id)
         if not quiz:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
+            raise not_found("quiz", quiz_id)
         return quiz
 
     def get_attempt_by_id(self, attempt_id: int, user_id: int) -> QuizAttempt:
         attempt = self.repository.get_attempt_by_id(attempt_id, user_id)
         if attempt is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+            raise not_found("attempt", attempt_id)
         return attempt
 
     def _resolve_attempt_duration_minutes(
@@ -153,13 +153,16 @@ class QuizService:
             return default_duration
 
         if selected_duration_minutes <= 0:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="selected_duration_minutes must be > 0")
+            raise bad_request(
+                "selected_duration_minutes must be greater than 0",
+                error_code="INVALID_ATTEMPT_DURATION",
+            )
 
         cap = min(settings.MAX_ATTEMPT_DURATION_MINUTES, max(default_duration * 2, default_duration))
         if selected_duration_minutes > cap:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"selected_duration_minutes exceeds allowed cap ({cap})",
+            raise bad_request(
+                f"selected_duration_minutes exceeds the allowed cap of {cap} minutes",
+                error_code="ATTEMPT_DURATION_EXCEEDS_CAP",
             )
         return selected_duration_minutes
 
@@ -168,7 +171,12 @@ class QuizService:
         latest = self.repository.get_latest_attempt(quiz_id, user_id)
         next_attempt_number = 1 if latest is None else latest.attempt_number + 1
         if next_attempt_number > quiz.max_attempts:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum attempts reached")
+            raise bad_request(
+                f"Quiz with id {quiz_id} allows at most {quiz.max_attempts} attempt(s)",
+                error_code="MAX_ATTEMPTS_REACHED",
+                resource="quiz",
+                resource_id=quiz_id,
+            )
 
         duration_minutes = self._resolve_attempt_duration_minutes(
             quiz=quiz,
@@ -201,12 +209,22 @@ class QuizService:
         self, quiz: Quiz, user_id: int, attempt: QuizAttempt, payload: QuizSubmitInput
     ) -> QuizAttempt:
         if attempt.status != QuizStatus.IN_PROGRESS.value:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Attempt is not in progress")
+            raise bad_request(
+                f"Attempt with id {attempt.id} is not in progress",
+                error_code="ATTEMPT_NOT_IN_PROGRESS",
+                resource="attempt",
+                resource_id=attempt.id,
+            )
 
         quiz_question_map = {question.id: question for question in quiz.quiz_questions}
         for response_item in payload.responses:
             if response_item.quiz_question_id not in quiz_question_map:
-                continue
+                raise bad_request(
+                    f"Quiz question with id {response_item.quiz_question_id} does not belong to quiz with id {quiz.id}",
+                    error_code="QUIZ_QUESTION_NOT_IN_QUIZ",
+                    resource="quiz_question",
+                    resource_id=response_item.quiz_question_id,
+                )
 
             existing = self.repository.find_response(
                 attempt_id=attempt.id,
@@ -250,7 +268,7 @@ class QuizService:
         quiz = self.get_quiz(quiz_id, user_id)
         attempt = self.repository.get_attempt(quiz_id, attempt_id, user_id)
         if not attempt:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+            raise not_found("attempt", attempt_id)
         return self._submit_for_attempt(quiz, user_id, attempt, payload)
 
     def submit_attempt_by_id(
@@ -276,7 +294,12 @@ class QuizService:
         quiz = self.get_quiz(quiz_id, user_id)
         attempt = self.repository.get_latest_attempt(quiz_id, user_id)
         if attempt is None or attempt.status != QuizStatus.IN_PROGRESS.value:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No in-progress attempt found")
+            raise bad_request(
+                f"No in-progress attempt was found for quiz with id {quiz_id}",
+                error_code="NO_IN_PROGRESS_ATTEMPT",
+                resource="quiz",
+                resource_id=quiz_id,
+            )
         return quiz, attempt
 
     def get_in_progress_questions_with_responses(self, quiz_id: int, user_id: int):
@@ -291,7 +314,7 @@ class QuizService:
         quiz = self.get_quiz(quiz_id, user_id)
         attempt = self.repository.get_attempt(quiz_id, attempt_id, user_id)
         if attempt is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+            raise not_found("attempt", attempt_id)
         responses = {
             response.quiz_question_id: response
             for response in self.repository.list_responses_for_attempt(attempt_id, user_id)
@@ -313,27 +336,40 @@ class QuizService:
     ) -> QuizResponse:
         attempt = self.repository.get_attempt_by_id(attempt_id, user_id)
         if attempt is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+            raise not_found("attempt", attempt_id)
         if attempt.status != QuizStatus.IN_PROGRESS.value:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Attempt is not in progress")
+            raise bad_request(
+                f"Attempt with id {attempt_id} is not in progress",
+                error_code="ATTEMPT_NOT_IN_PROGRESS",
+                resource="attempt",
+                resource_id=attempt_id,
+            )
 
         quiz = self.repository.get_user_quiz(attempt.quiz_id, user_id)
         if quiz is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
+            raise not_found("quiz", attempt.quiz_id)
 
         question = next((item for item in quiz.quiz_questions if item.id == quiz_question_id), None)
         if question is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz question not found")
+            raise not_found("quiz_question", quiz_question_id)
         if question.question_type == "objective":
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Objective questions do not accept theory uploads")
+            raise bad_request(
+                f"Quiz question with id {quiz_question_id} is objective and does not accept theory uploads",
+                error_code="OBJECTIVE_DOES_NOT_ACCEPT_UPLOAD",
+                resource="quiz_question",
+                resource_id=quiz_question_id,
+            )
 
         extension = original_filename.split(".")[-1].lower() if "." in original_filename else ""
         if extension not in {"pdf", "png", "jpg", "jpeg", "txt", "md", "docx"}:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported theory answer file type")
+            raise bad_request(
+                f"Unsupported theory answer file type '{extension or 'unknown'}'",
+                error_code="UNSUPPORTED_THEORY_FILE_TYPE",
+            )
         if len(content) > settings.MAX_UPLOAD_FILE_SIZE_MB * 1024 * 1024:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File too large. Max allowed is {settings.MAX_UPLOAD_FILE_SIZE_MB}MB",
+            raise bad_request(
+                f"File is too large. Maximum allowed size is {settings.MAX_UPLOAD_FILE_SIZE_MB}MB",
+                error_code="THEORY_UPLOAD_TOO_LARGE",
             )
 
         stored = self.storage_provider.save(original_name=original_filename, content=content)
@@ -374,7 +410,7 @@ class QuizService:
     ):
         assessment = self.repository.get_assessment(assessment_id)
         if assessment is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found")
+            raise not_found("assessment", assessment_id)
 
         topic_ids = selected_topic_ids or None
         question_type_mode = self._normalize_question_type_mode(assessment.question_format)
@@ -385,9 +421,11 @@ class QuizService:
             question_type_mode=question_type_mode,
         )
         if desired_question_count > available_count:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Requested {desired_question_count} questions but only {available_count} are available",
+            raise bad_request(
+                f"Assessment with id {assessment_id} has only {available_count} eligible questions, but {desired_question_count} were requested",
+                error_code="INSUFFICIENT_ASSESSMENT_QUESTIONS",
+                resource="assessment",
+                resource_id=assessment_id,
             )
 
         selected_questions = self.repository.select_assessment_questions(
@@ -397,9 +435,11 @@ class QuizService:
             question_type_mode=question_type_mode,
         )
         if len(selected_questions) < desired_question_count:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Not enough questions for selected topics and format",
+            raise bad_request(
+                f"Assessment with id {assessment_id} does not have enough questions for the selected topics and format",
+                error_code="INSUFFICIENT_FILTERED_QUESTIONS",
+                resource="assessment",
+                resource_id=assessment_id,
             )
 
         label = assessment.year_label or "Past Questions"

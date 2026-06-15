@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
+from src.common.errors import bad_request, not_found
 from src.common.enums import QuizStatus
 from src.db.session import get_db
 from src.modules.analytics.repository import AnalyticsRepository
@@ -114,13 +115,18 @@ async def get_attempt_review(
     repository = QuizRepository(db)
     attempt = repository.get_attempt_by_id(attempt_id, current_user.id)
     if attempt is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+        raise not_found("attempt", attempt_id)
     if attempt.status == QuizStatus.IN_PROGRESS.value:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review is available only after submission")
+        raise bad_request(
+            f"Review is available only after attempt with id {attempt_id} has been submitted",
+            error_code="REVIEW_NOT_AVAILABLE",
+            resource="attempt",
+            resource_id=attempt_id,
+        )
 
     quiz = repository.get_user_quiz(attempt.quiz_id, current_user.id)
     if quiz is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
+        raise not_found("quiz", attempt.quiz_id)
 
     responses = {
         response.quiz_question_id: response
@@ -182,11 +188,11 @@ async def get_attempt_result(
     repository = QuizRepository(db)
     attempt = repository.get_attempt_by_id(attempt_id, current_user.id)
     if attempt is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+        raise not_found("attempt", attempt_id)
 
     result = repository.get_result(attempt.quiz_id, current_user.id, attempt_id=attempt_id)
     if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")
+        raise not_found("result", attempt_id)
     topic_metrics = repository.list_attempt_topic_metrics(attempt_id, current_user.id)
     topic_analysis = []
     for metric in topic_metrics:

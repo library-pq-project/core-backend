@@ -1,4 +1,4 @@
-from fastapi import HTTPException, status
+from src.common.errors import bad_request, conflict, unauthorized
 
 from src.core.security import create_access_token, hash_password, verify_password
 from src.modules.auth.models import User
@@ -12,11 +12,15 @@ class AuthService:
 
     def register(self, payload: UserRegister) -> User:
         if self.repository.get_by_email(payload.email):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists")
+            raise conflict(
+                f"User with email {payload.email} already exists",
+                error_code="EMAIL_ALREADY_EXISTS",
+                resource="user",
+            )
         if payload.program_id is None or payload.current_level is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="program_id and current_level are required for student registration",
+            raise bad_request(
+                "program_id and current_level are required for student registration",
+                error_code="STUDENT_PROFILE_FIELDS_REQUIRED",
             )
 
         user = User(
@@ -33,7 +37,7 @@ class AuthService:
     def login(self, payload: UserLogin) -> str:
         user = self.repository.get_by_email(payload.email)
         if not user or not verify_password(payload.password, user.password_hash):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+            raise unauthorized("Invalid email or password", error_code="INVALID_CREDENTIALS")
         return create_access_token(str(user.id))
 
     def update_profile(self, user: User, payload: UserProfileUpdate) -> User:

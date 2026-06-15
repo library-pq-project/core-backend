@@ -5,6 +5,7 @@ import json
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 
+from src.common.errors import bad_request, conflict, not_found
 from src.common.utils import generate_slug
 from src.modules.topics.models import Topic
 from src.modules.topics.repository import TopicRepository
@@ -28,13 +29,13 @@ class TopicService:
     def get_topic(self, topic_id: int) -> Topic:
         topic = self.repository.get(topic_id)
         if not topic:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+            raise not_found("topic", topic_id)
         return topic
 
     def get_topic_by_slug(self, topic_slug: str) -> Topic:
         topic = self.repository.get_by_slug(topic_slug)
         if not topic:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+            raise not_found("topic", topic_slug)
         return topic
 
     def list_topics_in_course_slug(self, course_slug: str, *, skip: int, limit: int) -> list[Topic]:
@@ -50,9 +51,10 @@ class TopicService:
         try:
             return self.repository.create(topic)
         except IntegrityError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Unable to create topic with provided values",
+            raise conflict(
+                f"Topic '{payload.name}' could not be created because it conflicts with existing data",
+                error_code="TOPIC_CONFLICT",
+                resource="topic",
             ) from exc
 
     def update_topic(self, topic_id: int, payload: TopicUpdate) -> Topic:
@@ -71,9 +73,11 @@ class TopicService:
         try:
             return self.repository.save(topic)
         except IntegrityError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Unable to update topic with provided values",
+            raise conflict(
+                f"Topic with id {topic_id} could not be updated because it conflicts with existing data",
+                error_code="TOPIC_CONFLICT",
+                resource="topic",
+                resource_id=topic_id,
             ) from exc
 
     def delete_topic(self, topic_id: int) -> None:
@@ -143,7 +147,10 @@ class TopicService:
             if isinstance(loaded, dict):
                 loaded = loaded.get("rows", [])
             if not isinstance(loaded, list):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="JSON upload must contain a list of rows")
+                raise bad_request(
+                    "JSON upload must contain a list of rows",
+                    error_code="INVALID_JSON_ROWS",
+                )
             return [dict(item) for item in loaded if isinstance(item, dict)]
 
         if extension == "csv":
@@ -155,7 +162,13 @@ class TopicService:
             try:
                 from openpyxl import load_workbook
             except Exception as exc:  # noqa: BLE001
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="openpyxl is required for xlsx uploads") from exc
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail={
+                        "detail": "openpyxl is required for xlsx upload support",
+                        "error_code": "MISSING_XLSX_DEPENDENCY",
+                    },
+                ) from exc
             workbook = load_workbook(io.BytesIO(content), data_only=True)
             sheet = workbook.active
             rows = list(sheet.iter_rows(values_only=True))
@@ -172,7 +185,7 @@ class TopicService:
                 output.append(row)
             return output
 
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported topic bulk file type")
+        raise bad_request("Unsupported topic bulk file type", error_code="UNSUPPORTED_UPLOAD_TYPE")
 
     def bulk_upsert_topics_from_file(self, *, file_name: str, content: bytes) -> TopicBulkUpsertResult:
         rows = self._parse_file_rows(file_name=file_name, content=content)

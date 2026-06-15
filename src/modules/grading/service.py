@@ -1,5 +1,4 @@
-from fastapi import HTTPException, status
-
+from src.common.errors import bad_request, not_found
 from src.common.enums import GradedBy, QuizStatus
 from src.common.utils import now_utc
 from src.modules.analytics.models import AttemptTopicMetric, TopicPerformance
@@ -32,16 +31,18 @@ class GradingService:
     def grade_quiz(self, quiz_id: int, user_id: int, attempt_id: int) -> QuizResult:
         quiz = self.grading_repository.get_quiz_for_grading(quiz_id, user_id)
         if not quiz:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
+            raise not_found("quiz", quiz_id)
 
         attempt = self.grading_repository.get_attempt(quiz_id, attempt_id, user_id)
         if not attempt:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
+            raise not_found("attempt", attempt_id)
 
         if attempt.status not in [QuizStatus.SUBMITTED.value, QuizStatus.GRADED.value]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Attempt must be submitted before grading",
+            raise bad_request(
+                f"Attempt with id {attempt_id} must be submitted before grading",
+                error_code="ATTEMPT_NOT_READY_FOR_GRADING",
+                resource="attempt",
+                resource_id=attempt_id,
             )
 
         existing_result = self.quiz_repository.get_result(quiz_id, user_id, attempt_id=attempt_id)

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
+from src.common.errors import forbidden, unauthorized
 from src.core.config import settings
 from src.core.prototype import ensure_prototype_user_with_prerequisites
 from src.core.security import decode_access_token
@@ -30,13 +31,13 @@ def get_current_user(
         )
 
     if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        raise unauthorized("Authentication token was not provided", error_code="TOKEN_MISSING")
     subject = decode_access_token(token)
     if subject is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise unauthorized("Authentication token is invalid or expired", error_code="TOKEN_INVALID")
     user = AuthRepository(db).get_by_id(int(subject))
     if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        raise unauthorized("Authenticated user could not be found", error_code="AUTH_USER_NOT_FOUND", resource="user")
     return user
 
 
@@ -44,7 +45,7 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if settings.PROTOTYPE_MODE:
         return current_user
     if current_user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+        raise forbidden("Admin access is required for this operation", error_code="ADMIN_REQUIRED")
     return current_user
 
 

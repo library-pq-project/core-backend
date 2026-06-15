@@ -6,6 +6,7 @@ from src.modules.ai_generation.api import router as ai_generation_router
 from src.modules.analytics.api import router as analytics_router
 from src.modules.auth.api import router as auth_router
 from src.modules.courses.api import router as courses_router
+from src.modules.grading.api import router as grading_router
 from src.modules.lecture_notes.api import router as lecture_notes_router
 from src.modules.questions.api import router as questions_router
 from src.modules.quizzes.api import router as quizzes_router
@@ -23,4 +24,5 @@ api_router.include_router(questions_router, prefix="/questions", tags=["Question
 api_router.include_router(ai_generation_router, prefix="/ai", tags=["AI Generation"])
 api_router.include_router(quizzes_router, prefix="/quizzes", tags=["Quizzes"])
 api_router.include_router(quiz_attempts_router, prefix="/quiz-attempts", tags=["Quiz Attempts"])
+api_router.include_router(grading_router, prefix="/quizzes", tags=["Grading"])
 api_router.include_router(analytics_router, prefix="/analytics", tags=["Analytics"])

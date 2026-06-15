@@ -4,6 +4,7 @@ import json
 
 from fastapi import HTTPException, status
 
+from src.common.errors import bad_request, not_found
 from src.common.utils import generate_slug
 from src.core.config import settings
 from src.modules.questions.models import Question, QuestionImportJob, QuestionOption
@@ -54,50 +55,50 @@ class QuestionService:
     def get_question(self, question_id: int) -> Question:
         question = self.repository.get(question_id)
         if not question:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
+            raise not_found("question", question_id)
         return question
 
     def create_question(self, payload: QuestionCreate) -> Question:
         if payload.assessment_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="assessment_id is required",
-            )
+            raise bad_request("assessment_id is required", error_code="ASSESSMENT_ID_REQUIRED")
         assessment = self.repository.get_assessment(payload.assessment_id)
         if assessment is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Assessment not found",
-            )
+            raise not_found("assessment", payload.assessment_id)
         derived_course_id = assessment.course_id
         if payload.course_id is not None and payload.course_id != derived_course_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="course_id does not match the selected assessment. Omit course_id or use the assessment's course.",
+            raise bad_request(
+                f"course_id {payload.course_id} does not match assessment {assessment.id}. Omit course_id or use course_id {derived_course_id}.",
+                error_code="COURSE_ASSESSMENT_MISMATCH",
+                resource="assessment",
+                resource_id=assessment.id,
             )
         source_text = payload.source_text or payload.question_text
         if source_text is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Either source_text or question_text is required",
+            raise bad_request(
+                "Either source_text or question_text is required to create a question",
+                error_code="QUESTION_TEXT_REQUIRED",
             )
         if payload.topic_id is not None:
             topic = self.topic_repository.get(payload.topic_id)
             if topic is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+                raise not_found("topic", payload.topic_id)
             if topic.course_id != derived_course_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Selected topic does not belong to the assessment's course",
+                raise bad_request(
+                    f"Topic with id {payload.topic_id} does not belong to course with id {derived_course_id}",
+                    error_code="TOPIC_COURSE_MISMATCH",
+                    resource="topic",
+                    resource_id=payload.topic_id,
                 )
         if payload.lecture_note_id is not None:
             lecture_note = self.repository.get_lecture_note(payload.lecture_note_id)
             if lecture_note is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture note not found")
+                raise not_found("lecture_note", payload.lecture_note_id)
             if lecture_note.course_id != derived_course_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Selected lecture note does not belong to the assessment's course",
+                raise bad_request(
+                    f"Lecture note with id {payload.lecture_note_id} does not belong to course with id {derived_course_id}",
+                    error_code="LECTURE_NOTE_COURSE_MISMATCH",
+                    resource="lecture_note",
+                    resource_id=payload.lecture_note_id,
                 )
         question = Question(
             assessment_id=payload.assessment_id,
@@ -134,13 +135,15 @@ class QuestionService:
         if "assessment_id" in updates:
             assessment_id = updates["assessment_id"]
             if assessment_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="assessment_id cannot be removed from an existing question",
+                raise bad_request(
+                    "assessment_id cannot be removed from an existing question",
+                    error_code="ASSESSMENT_ID_REQUIRED",
+                    resource="question",
+                    resource_id=question_id,
                 )
             assessment = self.repository.get_assessment(assessment_id)
             if assessment is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found")
+                raise not_found("assessment", assessment_id)
             question.assessment_id = assessment.id
             question.course_id = assessment.course_id
             updates.pop("assessment_id", None)
@@ -148,9 +151,11 @@ class QuestionService:
         if "course_id" in updates:
             requested_course_id = updates.pop("course_id")
             if requested_course_id is not None and requested_course_id != question.course_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="course_id is derived from assessment_id and cannot be changed directly",
+                raise bad_request(
+                    f"course_id is derived from assessment_id and cannot be changed directly for question with id {question_id}",
+                    error_code="COURSE_DERIVED_FROM_ASSESSMENT",
+                    resource="question",
+                    resource_id=question_id,
                 )
 
         for field in [
@@ -175,21 +180,25 @@ class QuestionService:
         if "topic_id" in updates and question.topic_id is not None:
             topic = self.topic_repository.get(question.topic_id)
             if topic is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
+                raise not_found("topic", question.topic_id)
             if topic.course_id != question.course_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Selected topic does not belong to the question's course",
+                raise bad_request(
+                    f"Topic with id {question.topic_id} does not belong to course with id {question.course_id}",
+                    error_code="TOPIC_COURSE_MISMATCH",
+                    resource="topic",
+                    resource_id=question.topic_id,
                 )
 
         if "lecture_note_id" in updates and question.lecture_note_id is not None:
             lecture_note = self.repository.get_lecture_note(question.lecture_note_id)
             if lecture_note is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture note not found")
+                raise not_found("lecture_note", question.lecture_note_id)
             if lecture_note.course_id != question.course_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Selected lecture note does not belong to the question's course",
+                raise bad_request(
+                    f"Lecture note with id {question.lecture_note_id} does not belong to course with id {question.course_id}",
+                    error_code="LECTURE_NOTE_COURSE_MISMATCH",
+                    resource="lecture_note",
+                    resource_id=question.lecture_note_id,
                 )
 
         if "options" in updates and payload.options is not None:
@@ -396,7 +405,10 @@ class QuestionService:
             if isinstance(loaded, dict):
                 loaded = loaded.get("rows", [])
             if not isinstance(loaded, list):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="JSON upload must contain a list under rows")
+                raise bad_request(
+                    "JSON upload must contain a list under the 'rows' key",
+                    error_code="INVALID_JSON_ROWS",
+                )
             raw_rows = [dict(item) for item in loaded if isinstance(item, dict)]
         elif extension == "csv":
             source_type = "csv"
@@ -407,7 +419,13 @@ class QuestionService:
             try:
                 from openpyxl import load_workbook
             except Exception as exc:  # noqa: BLE001
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="openpyxl is required for xlsx upload") from exc
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail={
+                        "detail": "openpyxl is required for xlsx upload support",
+                        "error_code": "MISSING_XLSX_DEPENDENCY",
+                    },
+                ) from exc
             workbook = load_workbook(io.BytesIO(content), data_only=True)
             sheet = workbook.active
             rows = list(sheet.iter_rows(values_only=True))
@@ -420,12 +438,12 @@ class QuestionService:
                             row[header] = value
                     raw_rows.append(row)
         else:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported bulk upload file type")
+            raise bad_request("Unsupported bulk upload file type", error_code="UNSUPPORTED_UPLOAD_TYPE")
 
         if len(raw_rows) > settings.BULK_IMPORT_MAX_ROWS:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Row limit exceeded. Maximum allowed is {settings.BULK_IMPORT_MAX_ROWS}",
+            raise bad_request(
+                f"Row limit exceeded. Maximum allowed is {settings.BULK_IMPORT_MAX_ROWS}",
+                error_code="ROW_LIMIT_EXCEEDED",
             )
 
         parsed_rows: list[BulkQuestionRow] = []
@@ -524,9 +542,9 @@ class QuestionService:
 
     def bulk_import_from_json(self, *, payload: BulkQuestionImportRequest, user_id: int) -> BulkImportResult:
         if len(payload.rows) > settings.BULK_IMPORT_MAX_ROWS:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Row limit exceeded. Maximum allowed is {settings.BULK_IMPORT_MAX_ROWS}",
+            raise bad_request(
+                f"Row limit exceeded. Maximum allowed is {settings.BULK_IMPORT_MAX_ROWS}",
+                error_code="ROW_LIMIT_EXCEEDED",
             )
         return self._run_bulk_import(
             payload=payload,
@@ -569,7 +587,7 @@ class QuestionService:
     def get_import_job(self, *, job_id: int, user_id: int) -> QuestionImportJob:
         job = self.repository.get_import_job(job_id)
         if job is None or job.created_by_user_id != user_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Import job not found")
+            raise not_found("import_job", job_id)
         return job
 
     def list_import_jobs(self, *, user_id: int, skip: int, limit: int) -> list[QuestionImportJob]:

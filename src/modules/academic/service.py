@@ -1,6 +1,7 @@
-from fastapi import HTTPException, status
+from fastapi import status
 from sqlalchemy import update
 
+from src.common.errors import bad_request, http_error, not_found
 from src.common.utils import generate_slug
 from src.modules.academic.models import (
     AcademicCalendarState,
@@ -51,7 +52,16 @@ class AcademicService:
         session = self.repository.get_session(payload.academic_session_id)
         semester = self.repository.get_semester(payload.semester_id)
         if not session or not semester:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session or semester not found")
+            missing = []
+            if not session:
+                missing.append(f"academic session with id {payload.academic_session_id}")
+            if not semester:
+                missing.append(f"semester with id {payload.semester_id}")
+            raise http_error(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Referenced {' and '.join(missing)} {'was' if len(missing) == 1 else 'were'} not found",
+                error_code="ACADEMIC_REFERENCE_NOT_FOUND",
+            )
 
         active = self.repository.get_active_calendar()
         if active is None:
@@ -120,14 +130,14 @@ class AcademicService:
     def create_assessment(self, payload: AssessmentCreate) -> Assessment:
         course = self.repository.get_course(payload.course_id)
         if course is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+            raise not_found("course", payload.course_id)
         session = self.repository.get_session(payload.academic_session_id)
         if session is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Academic session not found")
+            raise not_found("academic_session", payload.academic_session_id)
         if payload.semester_id is not None:
             semester = self.repository.get_semester(payload.semester_id)
             if semester is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
+                raise not_found("semester", payload.semester_id)
         year_label = payload.year_label or session.name
         slug = generate_slug(
             f"{payload.course_id}-{payload.academic_session_id}-{payload.semester_id}-{payload.assessment_type}-{payload.question_format}-{year_label}"
@@ -167,14 +177,16 @@ class AcademicService:
     def get_active_calendar(self) -> AcademicCalendarState:
         active = self.repository.get_active_calendar()
         if not active:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active calendar is not configured")
+            raise not_found("active_calendar")
         return active
 
     def list_student_offered_courses(self, *, student: User, skip: int, limit: int):
         if student.program_id is None or student.current_level is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Student profile is incomplete. Update program and level first.",
+            raise bad_request(
+                "Student profile is incomplete. Update program and current level before listing offered courses.",
+                error_code="STUDENT_PROFILE_INCOMPLETE",
+                resource="user",
+                resource_id=student.id,
             )
         active = self.get_active_calendar()
         return self.repository.list_offered_courses_for_student(
@@ -196,7 +208,7 @@ class AcademicService:
     ) -> list[Question]:
         assessment = self.repository.get_assessment(assessment_id)
         if assessment is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found")
+            raise not_found("assessment", assessment_id)
         return self.repository.list_assessment_questions(
             assessment_id=assessment_id,
             question_type=question_type,

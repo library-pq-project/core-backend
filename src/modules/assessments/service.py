@@ -1,5 +1,4 @@
-from fastapi import HTTPException, status
-
+from src.common.errors import not_found
 from src.common.utils import generate_slug
 from src.core.config import settings
 from src.modules.academic.models import Assessment
@@ -14,16 +13,16 @@ class AssessmentService:
     def create_assessment(self, payload: AssessmentCreate) -> Assessment:
         course = self.repository.get_course(payload.course_id)
         if course is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+            raise not_found("course", payload.course_id)
 
         session = self.repository.get_session(payload.academic_session_id)
         if session is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Academic session not found")
+            raise not_found("academic_session", payload.academic_session_id)
 
         if payload.semester_id is not None:
             semester = self.repository.get_semester(payload.semester_id)
             if semester is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Semester not found")
+                raise not_found("semester", payload.semester_id)
 
         year_label = payload.year_label or session.name
         slug = generate_slug(
@@ -92,7 +91,7 @@ class AssessmentService:
     def get_assessment(self, assessment_id: int) -> Assessment:
         assessment = self.repository.get(assessment_id)
         if assessment is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assessment not found")
+            raise not_found("assessment", assessment_id)
         return assessment
 
     def list_assessment_questions(
