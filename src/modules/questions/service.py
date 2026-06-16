@@ -1,8 +1,14 @@
-import csv
-import io
 import json
+import logging
+from io import BytesIO
 
-from fastapi import HTTPException, status
+from docx import Document
+from pypdf import PdfReader
+
+try:
+    import httpx
+except Exception:  # noqa: BLE001
+    httpx = None
 
 from src.common.errors import bad_request, not_found
 from src.common.utils import generate_slug
@@ -21,6 +27,8 @@ from src.modules.questions.schemas import (
 from src.modules.topics.categorization import TopicCategorizationService
 from src.modules.topics.models import Topic
 from src.modules.topics.repository import TopicRepository
+
+logger = logging.getLogger(__name__)
 
 
 class QuestionService:
@@ -395,50 +403,149 @@ class QuestionService:
 
         return payload
 
-    def _parse_rows_from_file(self, *, file_name: str, content: bytes) -> tuple[list[BulkQuestionRow], list[ImportRowError], str]:
+    def _extract_text_from_upload(self, *, file_name: str, content: bytes) -> tuple[str, str]:
         extension = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
-        raw_rows: list[dict] = []
+        if extension == "txt":
+            return content.decode("utf-8", errors="ignore"), extension
+        if extension == "pdf":
+            reader = PdfReader(BytesIO(content))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            return text, extension
+        if extension == "docx":
+            document = Document(BytesIO(content))
+            text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+            return text, extension
+        raise bad_request(
+            "Unsupported AI bulk upload file type. Use pdf, docx, or txt.",
+            error_code="UNSUPPORTED_UPLOAD_TYPE",
+        )
 
-        if extension == "json":
-            source_type = "json"
-            loaded = json.loads(content.decode("utf-8"))
-            if isinstance(loaded, dict):
-                loaded = loaded.get("rows", [])
-            if not isinstance(loaded, list):
-                raise bad_request(
-                    "JSON upload must contain a list under the 'rows' key",
-                    error_code="INVALID_JSON_ROWS",
+    def _fallback_document_rows(self, *, extracted_text: str, import_mode: str) -> list[dict]:
+        blocks = [block.strip() for block in extracted_text.split("\n\n") if block.strip()]
+        rows: list[dict] = []
+        for block in blocks[: settings.BULK_IMPORT_MAX_ROWS]:
+            if import_mode == "objective":
+                rows.append(
+                    {
+                        "question_text": block,
+                        "source_text": block,
+                        "question_type": "objective",
+                        "options": [
+                            {"option_text": "Option A", "is_correct": True, "position": 1},
+                            {"option_text": "Option B", "is_correct": False, "position": 2},
+                        ],
+                    }
                 )
-            raw_rows = [dict(item) for item in loaded if isinstance(item, dict)]
-        elif extension == "csv":
-            source_type = "csv"
-            text = content.decode("utf-8", errors="ignore")
-            raw_rows = [dict(item) for item in csv.DictReader(io.StringIO(text))]
-        elif extension == "xlsx":
-            source_type = "xlsx"
+            else:
+                rows.append(
+                    {
+                        "question_text": block,
+                        "source_text": block,
+                        "question_type": "theory" if import_mode == "theory" else "theory",
+                        "marking_scheme": "Review and update marking scheme after import.",
+                        "solution_text": "Review and update model solution after import.",
+                    }
+                )
+        return rows
+
+    def _generate_rows_from_document(
+        self,
+        *,
+        extracted_text: str,
+        import_mode: str,
+        file_name: str,
+    ) -> list[dict]:
+        if not extracted_text.strip():
+            raise bad_request(
+                "The uploaded file does not contain extractable text.",
+                error_code="EMPTY_UPLOAD_TEXT",
+            )
+
+        if not settings.GEMINI_API_KEY or httpx is None:
+            if settings.AI_ALLOW_STUB_FALLBACK:
+                logger.warning(
+                    "AI bulk upload fallback in use file=%s mode=%s has_api_key=%s httpx_available=%s",
+                    file_name,
+                    import_mode,
+                    bool(settings.GEMINI_API_KEY),
+                    httpx is not None,
+                )
+                return self._fallback_document_rows(
+                    extracted_text=extracted_text,
+                    import_mode=import_mode,
+                )
+            raise bad_request(
+                "AI document bulk upload requires GEMINI_API_KEY and httpx.",
+                error_code="AI_BULK_UPLOAD_UNAVAILABLE",
+            )
+
+        prompt = (
+            "You are converting an exam or question bank document into structured import rows. "
+            "Return strict JSON array only. Each array item must be an object with keys: "
+            "question_text, source_text, question_type, options, marking_scheme, solution_text, explanation. "
+            "For objective questions, options must be a list of objects with keys option_text, is_correct, position. "
+            "For theory questions, options must be an empty list. "
+            "Do not invent metadata outside the document unless needed to keep the schema valid. "
+            "If the document does not clearly reveal the answer for an objective question, choose the best supported answer and include a concise explanation. "
+            f"import_mode={import_mode}. "
+            f"document_name={file_name}. "
+            f"document_text={extracted_text[:20000]}"
+        )
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.1,
+                "responseMimeType": "application/json",
+            },
+        }
+
+        last_error: Exception | None = None
+        for attempt_index in range(1, settings.GEMINI_MAX_RETRIES + 2):
             try:
-                from openpyxl import load_workbook
+                with httpx.Client(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
+                    response = client.post(
+                        url,
+                        json=payload,
+                        headers={
+                            "x-goog-api-key": settings.GEMINI_API_KEY,
+                            "Content-Type": "application/json",
+                        },
+                    )
+                response.raise_for_status()
+                data = response.json()
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                text = "".join(part.get("text", "") for part in parts if isinstance(part, dict)).strip()
+                if text.startswith("```"):
+                    text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                parsed = json.loads(text)
+                if not isinstance(parsed, list):
+                    raise ValueError("AI bulk upload response must be a JSON array")
+                return [dict(item) for item in parsed if isinstance(item, dict)]
             except Exception as exc:  # noqa: BLE001
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail={
-                        "detail": "openpyxl is required for xlsx upload support",
-                        "error_code": "MISSING_XLSX_DEPENDENCY",
-                    },
-                ) from exc
-            workbook = load_workbook(io.BytesIO(content), data_only=True)
-            sheet = workbook.active
-            rows = list(sheet.iter_rows(values_only=True))
-            if rows:
-                headers = [str(item).strip() if item is not None else "" for item in rows[0]]
-                for values in rows[1:]:
-                    row = {}
-                    for header, value in zip(headers, values):
-                        if header:
-                            row[header] = value
-                    raw_rows.append(row)
-        else:
-            raise bad_request("Unsupported bulk upload file type", error_code="UNSUPPORTED_UPLOAD_TYPE")
+                last_error = exc
+                logger.warning(
+                    "AI bulk upload parsing failed file=%s mode=%s attempt=%s/%s error=%s",
+                    file_name,
+                    import_mode,
+                    attempt_index,
+                    settings.GEMINI_MAX_RETRIES + 1,
+                    exc,
+                )
+
+        raise bad_request(
+            f"AI could not parse the uploaded document into questions: {last_error}",
+            error_code="AI_BULK_UPLOAD_PARSE_FAILED",
+        )
+
+    def _parse_rows_from_file(self, *, file_name: str, content: bytes, import_mode: str) -> tuple[list[BulkQuestionRow], list[ImportRowError], str]:
+        extracted_text, source_type = self._extract_text_from_upload(file_name=file_name, content=content)
+        raw_rows = self._generate_rows_from_document(
+            extracted_text=extracted_text,
+            import_mode=import_mode,
+            file_name=file_name,
+        )
 
         if len(raw_rows) > settings.BULK_IMPORT_MAX_ROWS:
             raise bad_request(
@@ -566,7 +673,11 @@ class QuestionService:
         auto_categorize_topics: bool,
         draft_theory_without_solution: bool,
     ) -> BulkImportResult:
-        parsed_rows, parse_errors, source_type = self._parse_rows_from_file(file_name=file_name, content=content)
+        parsed_rows, parse_errors, source_type = self._parse_rows_from_file(
+            file_name=file_name,
+            content=content,
+            import_mode=import_mode,
+        )
         payload = BulkQuestionImportRequest(
             rows=parsed_rows,
             import_mode=import_mode,

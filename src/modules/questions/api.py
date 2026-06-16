@@ -82,7 +82,7 @@ async def bulk_import_questions_upload(
 ):
     content = await file.read()
     return service.bulk_import_from_file(
-        file_name=file.filename or "questions.csv",
+        file_name=file.filename or "questions.txt",
         content=content,
         user_id=current_user.id,
         import_mode=import_mode,
