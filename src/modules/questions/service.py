@@ -1,6 +1,7 @@
 import json
 import logging
 from io import BytesIO
+from pathlib import Path
 
 from docx import Document
 from pypdf import PdfReader
@@ -11,8 +12,9 @@ except Exception:  # noqa: BLE001
     httpx = None
 
 from src.common.errors import bad_request, not_found
-from src.common.utils import generate_slug
+from src.common.utils import generate_slug, now_utc
 from src.core.config import settings
+from src.modules.academic.models import Assessment
 from src.modules.questions.models import Question, QuestionImportJob, QuestionOption
 from src.modules.questions.repository import QuestionRepository
 from src.modules.questions.schemas import (
@@ -257,6 +259,106 @@ class QuestionService:
             merged.question_type = "theory"
 
         return merged
+
+    def _default_question_format(self, import_mode: str) -> str:
+        return {
+            "objective": "Objective",
+            "theory": "Theory",
+            "mixed": "Mixed",
+        }.get(import_mode, "Mixed")
+
+    def _default_assessment_type_from_file_name(self, file_name: str | None) -> str:
+        stem = Path(file_name or "questions").stem.lower()
+        if any(token in stem for token in ["mid", "test", "ca", "continuous"]):
+            return "Test"
+        if "quiz" in stem:
+            return "Quiz"
+        return "Exam"
+
+    def _ensure_default_assessment(
+        self,
+        *,
+        payload: BulkQuestionImportRequest,
+        user_id: int,
+        file_name: str | None,
+    ) -> int | None:
+        if payload.default_assessment_id is not None:
+            assessment = self.repository.get_assessment(payload.default_assessment_id)
+            if assessment is None:
+                raise not_found("assessment", payload.default_assessment_id)
+            if payload.default_course_id is not None and payload.default_course_id != assessment.course_id:
+                raise bad_request(
+                    f"default_course_id {payload.default_course_id} does not match assessment {assessment.id}. Omit default_course_id or use course_id {assessment.course_id}.",
+                    error_code="COURSE_ASSESSMENT_MISMATCH",
+                    resource="assessment",
+                    resource_id=assessment.id,
+                )
+            payload.default_course_id = assessment.course_id
+            return assessment.id
+
+        if not payload.rows:
+            return None
+
+        if payload.default_course_id is None:
+            raise bad_request(
+                "default_course_id is required when bulk-upload should create a new assessment automatically.",
+                error_code="DEFAULT_COURSE_ID_REQUIRED",
+                resource="course",
+            )
+
+        course = self.repository.get_course(payload.default_course_id)
+        if course is None:
+            raise not_found("course", payload.default_course_id)
+
+        active_calendar = self.repository.get_active_calendar()
+        academic_session_id = payload.default_academic_session_id or (
+            active_calendar.academic_session_id if active_calendar is not None else None
+        )
+        semester_id = payload.default_semester_id if payload.default_semester_id is not None else (
+            active_calendar.semester_id if active_calendar is not None else None
+        )
+
+        if academic_session_id is None:
+            raise bad_request(
+                "default_academic_session_id is required when no active academic calendar is configured.",
+                error_code="ACADEMIC_SESSION_REQUIRED",
+                resource="academic_session",
+            )
+
+        session = self.repository.get_session(academic_session_id)
+        if session is None:
+            raise not_found("academic_session", academic_session_id)
+
+        if semester_id is not None:
+            semester = self.repository.get_semester(semester_id)
+            if semester is None:
+                raise not_found("semester", semester_id)
+
+        assessment_type = payload.default_assessment_type or self._default_assessment_type_from_file_name(file_name)
+        question_format = payload.default_question_format or self._default_question_format(payload.import_mode)
+        year_label = session.name
+        timestamp = now_utc().strftime("%Y%m%d%H%M%S")
+        slug = generate_slug(
+            f"{course.id}-{academic_session_id}-{semester_id}-{assessment_type}-{question_format}-{year_label}-{timestamp}"
+        )
+
+        assessment = self.repository.create_assessment(
+            Assessment(
+                course_id=course.id,
+                academic_session_id=academic_session_id,
+                semester_id=semester_id,
+                assessment_type=assessment_type,
+                question_format=question_format,
+                default_duration_minutes=payload.default_duration_minutes,
+                year_label=year_label,
+                source_type=payload.default_source_type,
+                created_by_user_id=user_id,
+                slug=slug,
+            )
+        )
+        payload.default_course_id = course.id
+        payload.default_assessment_id = assessment.id
+        return assessment.id
 
     def _resolve_topic(self, row: BulkQuestionRow, *, auto_categorize_topics: bool) -> tuple[int | None, float | None, dict | None, int | None]:
         if row.course_id is None:
@@ -622,6 +724,11 @@ class QuestionService:
         parse_errors: list[ImportRowError] | None = None,
     ) -> BulkImportResult:
         parse_errors = parse_errors or []
+        created_assessment_id = self._ensure_default_assessment(
+            payload=payload,
+            user_id=user_id,
+            file_name=file_name,
+        )
         job = self._build_job(
             user_id=user_id,
             source_type=source_type,
@@ -673,6 +780,7 @@ class QuestionService:
             errors=errors,
             created_question_ids=[item.id for item in accepted_questions],
             created_topic_ids=sorted(created_topic_ids),
+            created_assessment_id=created_assessment_id,
         )
 
     def bulk_import_from_json(self, *, payload: BulkQuestionImportRequest, user_id: int) -> BulkImportResult:
@@ -697,6 +805,11 @@ class QuestionService:
         import_mode: str,
         default_course_id: int | None,
         default_assessment_id: int | None,
+        default_academic_session_id: int | None,
+        default_semester_id: int | None,
+        default_assessment_type: str | None,
+        default_question_format: str | None,
+        default_duration_minutes: int,
         default_source_type: str,
         auto_categorize_topics: bool,
         draft_theory_without_solution: bool,
@@ -711,6 +824,11 @@ class QuestionService:
             import_mode=import_mode,
             default_course_id=default_course_id,
             default_assessment_id=default_assessment_id,
+            default_academic_session_id=default_academic_session_id,
+            default_semester_id=default_semester_id,
+            default_assessment_type=default_assessment_type,
+            default_question_format=default_question_format,
+            default_duration_minutes=default_duration_minutes,
             default_source_type=default_source_type,
             auto_categorize_topics=auto_categorize_topics,
             draft_theory_without_solution=draft_theory_without_solution,

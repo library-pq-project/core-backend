@@ -109,6 +109,11 @@ class BulkQuestionImportRequest(BaseModel):
     import_mode: Literal["objective", "theory", "mixed"] = "mixed"
     default_course_id: int | None = None
     default_assessment_id: int | None = None
+    default_academic_session_id: int | None = None
+    default_semester_id: int | None = None
+    default_assessment_type: str | None = None
+    default_question_format: str | None = None
+    default_duration_minutes: int = 60
     default_source_type: Literal["actual", "ai_generated"] = "actual"
     auto_categorize_topics: bool = True
     draft_theory_without_solution: bool = False
@@ -145,3 +150,4 @@ class BulkImportResult(BaseModel):
     errors: list[ImportRowError]
     created_question_ids: list[int]
     created_topic_ids: list[int]
+    created_assessment_id: int | None = None

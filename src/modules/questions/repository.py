@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, selectinload
 
-from src.modules.academic.models import Assessment
+from src.modules.academic.models import AcademicCalendarState, AcademicSession, Assessment, Semester
 from src.modules.courses.models import Course
 from src.modules.lecture_notes.models import LectureNote
 from src.modules.questions.models import Question, QuestionImportJob
@@ -50,6 +50,16 @@ class QuestionRepository:
     def get_assessment(self, assessment_id: int) -> Assessment | None:
         return self.db.get(Assessment, assessment_id)
 
+    def get_session(self, session_id: int) -> AcademicSession | None:
+        return self.db.get(AcademicSession, session_id)
+
+    def get_semester(self, semester_id: int) -> Semester | None:
+        return self.db.get(Semester, semester_id)
+
+    def get_active_calendar(self) -> AcademicCalendarState | None:
+        stmt = select(AcademicCalendarState).order_by(AcademicCalendarState.id.asc())
+        return self.db.scalar(stmt)
+
     def get_course(self, course_id: int) -> Course | None:
         return self.db.get(Course, course_id)
 
@@ -61,6 +71,12 @@ class QuestionRepository:
         self.db.commit()
         self.db.refresh(question)
         return question
+
+    def create_assessment(self, assessment: Assessment) -> Assessment:
+        self.db.add(assessment)
+        self.db.commit()
+        self.db.refresh(assessment)
+        return assessment
 
     def create_many(self, questions: list[Question]) -> list[Question]:
         self.db.add_all(questions)
