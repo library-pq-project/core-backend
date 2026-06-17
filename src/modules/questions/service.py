@@ -371,6 +371,34 @@ class QuestionService:
             except Exception:
                 pass
 
+        if isinstance(payload.get("options"), list):
+            normalized_options = []
+            for index, option in enumerate(payload["options"], start=1):
+                if not isinstance(option, dict):
+                    normalized_options.append(option)
+                    continue
+
+                normalized_option = dict(option)
+                raw_position = normalized_option.get("position")
+                normalized_position: int | None = None
+
+                if isinstance(raw_position, int):
+                    normalized_position = raw_position
+                elif isinstance(raw_position, str):
+                    stripped = raw_position.strip()
+                    if stripped.isdigit():
+                        normalized_position = int(stripped)
+                    elif len(stripped) == 1 and stripped.upper() in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+                        normalized_position = ord(stripped.upper()) - ord("A") + 1
+
+                if normalized_position is None:
+                    normalized_position = index
+
+                normalized_option["position"] = normalized_position
+                normalized_options.append(normalized_option)
+
+            payload["options"] = normalized_options
+
         option_columns = []
         for label in ["a", "b", "c", "d", "e", "f"]:
             value = payload.get(f"option_{label}")
